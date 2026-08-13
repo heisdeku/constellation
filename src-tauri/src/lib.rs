@@ -1,0 +1,81 @@
+mod control;
+pub mod ports;
+pub mod proc;
+mod sh;
+
+use control::ControlResult;
+use ports::ScanResult;
+
+#[tauri::command]
+async fn scan_ports(include_udp: bool) -> Result<ScanResult, String> {
+    // lsof/ps are blocking; keep them off the main thread so the window stays responsive.
+    tauri::async_runtime::spawn_blocking(move || ports::scan(include_udp))
+        .await
+        .map_err(|e| format!("scan task failed: {e}"))?
+}
+
+#[tauri::command]
+async fn pause_process(pid: i32, expected_name: Option<String>) -> Result<ControlResult, String> {
+    tauri::async_runtime::spawn_blocking(move || control::pause(pid, expected_name.as_deref()))
+        .await
+        .map_err(|e| format!("pause task failed: {e}"))?
+}
+
+#[tauri::command]
+async fn resume_process(pid: i32, expected_name: Option<String>) -> Result<ControlResult, String> {
+    tauri::async_runtime::spawn_blocking(move || control::resume(pid, expected_name.as_deref()))
+        .await
+        .map_err(|e| format!("resume task failed: {e}"))?
+}
+
+#[tauri::command]
+async fn stop_process(
+    pid: i32,
+    expected_name: Option<String>,
+    force: bool,
+    grace_ms: Option<u64>,
+) -> Result<ControlResult, String> {
+    let grace = grace_ms.unwrap_or(3000);
+    tauri::async_runtime::spawn_blocking(move || {
+        control::stop(pid, expected_name.as_deref(), force, grace)
+    })
+    .await
+    .map_err(|e| format!("stop task failed: {e}"))?
+}
+
+#[tauri::command]
+fn reveal_in_finder(path: String) -> Result<(), String> {
+    control::reveal(&path)
+}
+
+#[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    control::open(&path)
+}
+
+#[tauri::command]
+fn open_in_terminal(path: String) -> Result<(), String> {
+    control::open_terminal(&path)
+}
+
+#[tauri::command]
+fn open_in_editor(path: String) -> Result<String, String> {
+    control::open_in_editor(&path)
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            scan_ports,
+            pause_process,
+            resume_process,
+            stop_process,
+            reveal_in_finder,
+            open_path,
+            open_in_terminal,
+            open_in_editor,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running Port Tracker");
+}
