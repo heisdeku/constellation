@@ -1,0 +1,182 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-canvas: #0a0c10;
+  --color-surface: #101319;
+  --color-surface-2: #161a22;
+  --color-surface-3: #1d222c;
+  --color-line: #242a35;
+  --color-line-soft: #1b202a;
+  --color-ink: #e8ebf1;
+  --color-ink-dim: #a3acbd;
+  --color-ink-faint: #6b7488;
+
+  --color-live: #34d399;
+  --color-held: #fbbf24;
+  --color-danger: #f87171;
+  --color-info: #60a5fa;
+  --color-violet: #a78bfa;
+
+  --font-mono:
+    'SF Mono', ui-monospace, SFMono-Regular, Menlo, 'JetBrains Mono', monospace;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
+
+  --radius-card: 0.75rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    /* This is a desktop window, not a document — no rubber-band, no text drag. */
+    overscroll-behavior: none;
+    user-select: none;
+    cursor: default;
+  }
+
+  /* Selection is opt-in, on the things worth copying. */
+  .selectable,
+  input {
+    user-select: text;
+    cursor: text;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-surface-3);
+    border: 3px solid var(--color-canvas);
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #2c3340;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-info);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-1.5 rounded-md
+      border border-line bg-surface-2 px-2.5 py-1.5 text-[12px] font-medium
+      text-ink-dim transition-colors;
+  }
+  .btn:hover:not(:disabled) {
+    @apply border-line bg-surface-3 text-ink;
+  }
+  .btn:disabled {
+    @apply cursor-not-allowed opacity-40;
+  }
+
+  .btn-ghost {
+    @apply border-transparent bg-transparent;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    @apply border-line bg-surface-2;
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    @apply border-danger/40 bg-danger/10 text-danger;
+  }
+
+  .btn-accent {
+    @apply border-live/30 bg-live/10 text-live;
+  }
+  .btn-accent:hover:not(:disabled) {
+    @apply border-live/50 bg-live/20 text-live;
+  }
+
+  /* Tailwind v4 drives scale/translate as their own CSS properties, not `transform`,
+     so the transition must name them explicitly or the popup pops in. */
+  .popup {
+    @apply z-50 scale-100 rounded-lg border border-line bg-surface-2 p-1 opacity-100
+      shadow-2xl shadow-black/60 outline-none
+      transition-[opacity,scale] duration-150 ease-out;
+    transform-origin: var(--transform-origin);
+  }
+  .popup[data-starting-style],
+  .popup[data-ending-style] {
+    @apply scale-95 opacity-0;
+  }
+
+  .menu-item {
+    @apply flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5
+      text-[12.5px] text-ink-dim outline-none;
+  }
+  .menu-item[data-highlighted] {
+    @apply bg-surface-3 text-ink;
+  }
+  .menu-item[data-disabled] {
+    @apply opacity-40;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px]
+      font-medium uppercase tracking-wide;
+  }
+
+  .field {
+    @apply w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12.5px]
+      text-ink placeholder:text-ink-faint;
+  }
+  .field:focus {
+    @apply border-info/60 outline-none;
+  }
+}
+
+/* The whole titlebar strip drags the window; interactive children opt out. */
+.drag-region {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-live) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-live) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-live) 0%, transparent);
+  }
+}
+.live-dot {
+  animation: pulse-ring 2.4s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
+  .popup {
+    transition: none;
+  }
+}
