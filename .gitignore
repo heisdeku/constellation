@@ -1,0 +1,7 @@
+node_modules
+dist
+src-tauri/target
+src-tauri/gen/schemas
+src/routeTree.gen.ts
+.DS_Store
+*.local
