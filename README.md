@@ -83,11 +83,35 @@ pnpm app
 > `pnpm dev` alone only serves the web UI. It has no backend, so it cannot read
 > ports — the app will tell you so if you try.
 
-To produce a `.app` and `.dmg`:
+### Installing it
+
+`pnpm app` runs a bare debug binary straight from the build directory — it never
+becomes a `.app`, so it won't appear in `/Applications`, Spotlight or the Dock's
+"keep" list. To get a real application:
 
 ```bash
 pnpm app:build
 ```
+
+That produces both a bundle and a disk image:
+
+```
+src-tauri/target/release/bundle/macos/Port Tracker.app
+src-tauri/target/release/bundle/dmg/Port Tracker_0.1.0_aarch64.dmg
+```
+
+Copy the `.app` into `/Applications` (or open the `.dmg` and drag it there):
+
+```bash
+cp -R "src-tauri/target/release/bundle/macos/Port Tracker.app" /Applications/
+```
+
+The bundle is ad-hoc signed, which is enough to run locally without a Gatekeeper
+prompt. Distributing it to other Macs would need a Developer ID signature and
+notarisation.
+
+For a quick installable build without release optimisation, `pnpm tauri build --debug`
+bundles the existing debug artifacts in under a minute.
 
 ### Requirements
 
