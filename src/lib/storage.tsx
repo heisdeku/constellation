@@ -11,6 +11,7 @@ import {
   diskUsage,
   errorMessage,
   measureTarget,
+  storageChildren,
   storageTargets,
   type CleanResult,
   type DiskUsage,
@@ -24,6 +25,8 @@ const MEASURE_CONCURRENCY = 6
 interface StorageState {
   disk: DiskUsage | null
   targets: StorageTarget[]
+  /** What's inside each folder opened so far, keyed by its path. */
+  browsed: ReadonlyMap<string, StorageTarget[]>
   measurements: ReadonlyMap<string, Measurement>
   /** Targets measured so far this scan, for the progress line. */
   measuredCount: number
@@ -33,6 +36,7 @@ interface StorageState {
   selected: ReadonlySet<string>
   setSelected: (ids: ReadonlySet<string>) => void
   scan: () => Promise<void>
+  browse: (path: string) => Promise<void>
   clean: (targets: StorageTarget[]) => Promise<Map<string, CleanResult | Error>>
 }
 
@@ -41,6 +45,7 @@ const StorageContext = createContext<StorageState | null>(null)
 export function StorageProvider({ children }: { children: React.ReactNode }) {
   const [disk, setDisk] = useState<DiskUsage | null>(null)
   const [targets, setTargets] = useState<StorageTarget[]>([])
+  const [browsed, setBrowsed] = useState<Map<string, StorageTarget[]>>(new Map())
   const [measurements, setMeasurements] = useState<Map<string, Measurement>>(new Map())
   const [measuredCount, setMeasuredCount] = useState(0)
   const [scanning, setScanning] = useState(false)
@@ -54,6 +59,34 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
     setMeasurements((m) => new Map(m).set(id, next))
   }, [])
 
+  const measureAll = useCallback(
+    async (ids: string[]) => {
+      const queue = [...ids]
+      const worker = async () => {
+        for (let id = queue.shift(); id; id = queue.shift()) {
+          // One unreadable folder shouldn't cost the rest of the scan.
+          await measure(id).catch((e) => setError(errorMessage(e)))
+          setMeasuredCount((n) => n + 1)
+        }
+      }
+      await Promise.all(Array.from({ length: MEASURE_CONCURRENCY }, worker))
+    },
+    [measure],
+  )
+
+  const browse = useCallback(
+    async (path: string) => {
+      try {
+        const found = await storageChildren(path)
+        setBrowsed((b) => new Map(b).set(path, found))
+        await measureAll(found.map((t) => t.id))
+      } catch (e) {
+        setError(errorMessage(e))
+      }
+    },
+    [measureAll],
+  )
+
   const scan = useCallback(async () => {
     if (inFlight.current) return
     inFlight.current = true
@@ -64,23 +97,15 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
       setDisk(await diskUsage())
       const found = await storageTargets()
       setTargets(found)
-
-      const queue = found.map((t) => t.id)
-      const worker = async () => {
-        for (let id = queue.shift(); id; id = queue.shift()) {
-          // One unreadable folder shouldn't cost the rest of the scan.
-          await measure(id).catch((e) => setError(errorMessage(e)))
-          setMeasuredCount((n) => n + 1)
-        }
-      }
-      await Promise.all(Array.from({ length: MEASURE_CONCURRENCY }, worker))
+      setBrowsed(new Map())
+      await measureAll(found.map((t) => t.id))
     } catch (e) {
       setError(errorMessage(e))
     } finally {
       inFlight.current = false
       setScanning(false)
     }
-  }, [measure])
+  }, [measureAll])
 
   const clean = useCallback(
     async (chosen: StorageTarget[]) => {
@@ -97,15 +122,20 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
       setSelected(new Set())
       setCleaning(false)
       diskUsage().then(setDisk, (e) => setError(errorMessage(e)))
+      const cleaned = new Set(chosen.map((t) => t.id))
+      for (const [path, items] of browsed) {
+        if (items.some((t) => cleaned.has(t.id))) void browse(path)
+      }
       return results
     },
-    [measure],
+    [measure, browsed, browse],
   )
 
   const value = useMemo<StorageState>(
     () => ({
       disk,
       targets,
+      browsed,
       measurements,
       measuredCount,
       scanning,
@@ -114,9 +144,23 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
       selected,
       setSelected,
       scan,
+      browse,
       clean,
     }),
-    [disk, targets, measurements, measuredCount, scanning, cleaning, error, selected, scan, clean],
+    [
+      disk,
+      targets,
+      browsed,
+      measurements,
+      measuredCount,
+      scanning,
+      cleaning,
+      error,
+      selected,
+      scan,
+      browse,
+      clean,
+    ],
   )
 
   return <StorageContext.Provider value={value}>{children}</StorageContext.Provider>

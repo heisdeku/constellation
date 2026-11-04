@@ -62,7 +62,19 @@ export interface ControlResult {
 
 export type StorageSafety = 'safe' | 'review' | 'keep'
 
-export type StorageGroup = 'packages' | 'mobile' | 'apps' | 'hidden' | 'projects'
+export type StorageDisposal = 'delete' | 'trash' | 'none'
+
+export type StorageGroup =
+  | 'packages'
+  | 'mobile'
+  | 'apps'
+  | 'hidden'
+  | 'projects'
+  | 'applications'
+  | 'documents'
+  | 'icloud'
+  | 'messages'
+  | 'photos'
 
 export interface StorageTarget {
   id: string
@@ -71,6 +83,8 @@ export interface StorageTarget {
   detail: string
   path: string
   safety: StorageSafety
+  disposal: StorageDisposal
+  browsable: boolean
   modifiedMs: number | null
 }
 
@@ -83,10 +97,12 @@ export interface Measurement {
 export interface DiskUsage {
   totalBytes: number
   freeBytes: number
+  systemBytes: number
 }
 
 export interface CleanResult {
   removed: number
+  protectedItems: number
   failures: string[]
 }
 
@@ -138,6 +154,9 @@ export const openInEditor = (path: string) =>
 export const diskUsage = () => call<DiskUsage>('disk_usage')
 
 export const storageTargets = () => call<StorageTarget[]>('storage_targets')
+
+export const storageChildren = (path: string) =>
+  call<StorageTarget[]>('storage_children', { path })
 
 export const measureTarget = (id: string) =>
   call<Measurement>('measure_target', { id })
