@@ -1,13 +1,14 @@
 <div align="center">
 
-<img src="src-tauri/icons/128x128@2x.png" width="104" alt="Port Tracker">
+<img src="src-tauri/icons/128x128@2x.png" width="104" alt="System Manager">
 
-# Port Tracker
+# System Manager
 
-**See every port on your Mac, what owns it, and where it lives.**
+**See what's running on your Mac and what's really filling its disk.**
 
-A desktop app that lists every listening port, identifies the process behind it,
-links straight to that project's folder, and lets you pause or stop it.
+A desktop app with two jobs. **Ports** lists every listening port, identifies the
+process behind it, and lets you pause or stop it. **Storage** shows what macOS hides
+under System Data, measures what deleting it would really free, and clears it safely.
 
 Tauri v2 · Rust · React 19 · TanStack Router · Tailwind v4 · Base UI
 
@@ -20,8 +21,8 @@ Tauri v2 · Rust · React 19 · TanStack Router · Tailwind v4 · Base UI
 `lsof -i :3000` tells you a PID. It doesn't tell you *which project* that is.
 
 If you run several dev servers, a few worktrees and some containers, the answer
-to "what's on 5173 and can I kill it?" takes three commands and a guess. Port
-Tracker answers it in one glance — and the folder name is the answer, not the PID.
+to "what's on 5173 and can I kill it?" takes three commands and a guess. System
+Manager answers it in one glance — and the folder name is the answer, not the PID.
 
 ## What it does
 
@@ -56,11 +57,48 @@ and watches the filesystem. Freeze it, keep the port, thaw it when you come back
 
 ![Details for a single port](docs/images/detail.png)
 
+## Storage
+
+System Settings lumps caches, package stores and hidden folders together as System
+Data and offers no way to clear them. The Storage tab breaks that down into package
+manager caches, app caches and logs, Xcode and simulator data, hidden system files,
+and build folders in your projects.
+
+**Sizes are what you'd get back, not what `du` says.** APFS clones and hard links
+share disk blocks, so a folder can look enormous and free almost nothing. Chrome
+leaves a clone of itself behind each time it crashes: 69 of them read as 118 GB in `du`
+and occupied under 5 GB. Each file's clone ID and reference count are read from APFS,
+and a shared block only counts if deleting the folder would really release it.
+
+Every item carries a tier:
+
+| Tier | Meaning |
+| --- | --- |
+| **Safe** | Rebuilds itself. The cost is a slower next launch or install. |
+| **Review** | Removable, but check first: it may hold something you can't simply rebuild. |
+| **Keep** | Shown so the space is accounted for. It can't be deleted here. |
+
+Nothing is selected by default, and cleaning always asks first. Deleted files skip the
+Trash, because moving them there wouldn't free any space.
+
+- The UI sends an id, never a path. The backend resolves it and rejects anything that
+  escapes its folder.
+- What gets measured is exactly what gets deleted: both walk the same list.
+- A cache folder replaced by a symlink is refused, and symlinks inside are removed
+  without following them.
+- Project folders only count alongside their marker file, so a `target` folder with
+  no `Cargo.toml` beside it is ignored. Projects with a listening port can't be selected.
+- Temp files younger than three days, and sockets of any age, are left alone. The
+  newest browser clone is kept because a running browser may be using it.
+
+Some folders are private to macOS. Grant Full Disk Access in System Settings to include
+them; without it the app says how many items it couldn't read.
+
 ## Safety
 
 Signalling other people's processes is easy to get wrong, so the rules are strict:
 
-- PID 1 and below, and Port Tracker itself, are never signalled.
+- PID 1 and below, and System Manager itself, are never signalled.
 - Critical macOS processes are protected by name — `launchd`, `WindowServer`,
   `loginwindow`, `Finder`, `coreaudiod` and others.
 - Processes owned by another user are read-only. macOS would reject the signal
@@ -96,14 +134,14 @@ pnpm app:build
 That produces both a bundle and a disk image:
 
 ```
-src-tauri/target/release/bundle/macos/Port Tracker.app
-src-tauri/target/release/bundle/dmg/Port Tracker_0.1.0_aarch64.dmg
+src-tauri/target/release/bundle/macos/System Manager.app
+src-tauri/target/release/bundle/dmg/System Manager_0.1.0_aarch64.dmg
 ```
 
 Copy the `.app` into `/Applications` (or open the `.dmg` and drag it there):
 
 ```bash
-cp -R "src-tauri/target/release/bundle/macos/Port Tracker.app" /Applications/
+cp -R "src-tauri/target/release/bundle/macos/System Manager.app" /Applications/
 ```
 
 The bundle is ad-hoc signed, which is enough to run locally without a Gatekeeper
@@ -153,18 +191,23 @@ process-state mapping, `.app` bundle detection and project-root walking against 
 samples. Two integration tests run a real scan of the host machine and assert the
 whole pipeline holds — including that `cwd_exists` matches the filesystem.
 
+Storage tests run inside throwaway folders and never touch real data. They create real
+APFS clones and hard links to check sizing, and try to escape the delete boundary with
+crafted ids and symlinks.
+
 ## Layout
 
 ```
 src/
-  routes/          TanStack Router file routes (__root, index, settings)
+  routes/          TanStack Router file routes (__root, index, storage, settings)
   components/      Table, detail panel, actions provider, Base UI wrappers
-  lib/             Tauri bindings, filtering/sorting, formatting, app store
+  lib/             Tauri bindings, filtering/sorting, formatting, app and storage stores
 src-tauri/src/
   lib.rs           Tauri command surface
   ports.rs         lsof parsing, grouping, Docker enrichment
   proc.rs          ps snapshot, cwd resolution, project-root detection
   control.rs       Signals, and the Finder/Terminal/editor jump-offs
+  storage.rs       Clone-aware sizing, the cleanup catalogue, safe deletion
   sh.rs            Subprocess runner with timeouts
 docs/icon.svg      Icon artwork, with regeneration instructions
 ```
