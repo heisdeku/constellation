@@ -242,7 +242,7 @@ function Row({
             <Tip
               content={
                 !p.ownedByMe
-                  ? `Runs as ${p.user} — macOS won't let Port Tracker signal it`
+                  ? `Runs as ${p.user} — macOS won't let System Manager signal it`
                   : p.protected
                     ? 'Protected system process'
                     : p.paused

@@ -1,9 +1,9 @@
 {
-  "name": "port-tracker",
+  "name": "system-manager",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "See every port on your Mac, what owns it, and where it lives.",
+  "description": "See what is running on your Mac and what is filling its disk.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

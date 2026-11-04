@@ -3,7 +3,7 @@
 //! The unit tests cover parsing with fixed samples; this checks the whole pipeline —
 //! lsof, ps, cwd resolution and project detection — against live system state.
 
-use port_tracker_lib::ports;
+use system_manager_lib::ports;
 
 #[test]
 fn scans_real_listening_ports() {
