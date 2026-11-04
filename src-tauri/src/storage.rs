@@ -1,0 +1,871 @@
+//! Finding what fills the disk, and clearing the parts that are safe to clear.
+//!
+//! Two rules keep this honest:
+//!
+//! - **Sizes are what deleting would free, not what `du` says.** APFS clones share
+//!   blocks, so 69 copies of Chrome read as 118 GB and occupy under 5 GB. See [`Tally`].
+//! - **The UI never sends a path to delete.** It sends a target id, which [`find`]
+//!   resolves and validates here. [`entries`] is the one list both measuring and
+//!   cleaning walk, so what was measured is exactly what gets removed.
+
+use std::collections::HashMap;
+use std::ffi::CString;
+use std::fs::{self, Metadata};
+use std::os::macos::fs::MetadataExt as _;
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::{FileTypeExt, MetadataExt};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use serde::Serialize;
+
+use crate::sh;
+
+const DATA_VOLUME: &str = "/System/Volumes/Data";
+const SIMCTL_TIMEOUT: Duration = Duration::from_secs(120);
+/// Temp files younger than this may belong to something still running.
+const TEMP_MIN_AGE: Duration = Duration::from_secs(3 * 24 * 60 * 60);
+
+/// Where projects usually live. Fixed rather than the whole home folder, because
+/// walking Desktop, Documents or Downloads makes macOS prompt for each of them.
+const PROJECT_ROOTS: &[&str] = &["dev", "code", "projects", "src", "repos", "work", "Developer"];
+
+/// Build output worth offering, each with the files that prove it really is build
+/// output. A folder called `build` or `target` with neither nearby is left alone.
+const ARTIFACTS: &[(&str, &[&str])] = &[
+    ("node_modules", &["package.json"]),
+    (".next", &["package.json"]),
+    (".turbo", &["package.json"]),
+    ("target", &["Cargo.toml"]),
+    ("Pods", &["Podfile"]),
+    ("build", &["build.gradle", "build.gradle.kts"]),
+    (".gradle", &["settings.gradle", "settings.gradle.kts", "build.gradle", "build.gradle.kts"]),
+];
+
+/// Regenerated folders that Electron apps keep in Application Support.
+const ELECTRON_CACHES: &[&str] = &["Cache", "Code Cache", "GPUCache", "CachedData", "DawnCache"];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Safety {
+    /// Rebuilt automatically; the only cost is a slower next launch or install.
+    Safe,
+    /// Removable, but you may lose something or have to rebuild it by hand.
+    Review,
+    /// Shown so the space is accounted for. Never deleted.
+    Keep,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Group {
+    Packages,
+    Mobile,
+    Apps,
+    Hidden,
+    Projects,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Target {
+    pub id: String,
+    pub group: Group,
+    pub label: String,
+    /// What this is and what removing it costs.
+    pub detail: String,
+    pub path: String,
+    pub safety: Safety,
+    /// Project folders only: when the folder last changed, to spot abandoned projects.
+    pub modified_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Measurement {
+    /// What `du` would report.
+    pub apparent_bytes: u64,
+    /// What deleting this would actually return to the disk.
+    pub reclaimable_bytes: u64,
+    /// Entries macOS refused to show us, usually for want of Full Disk Access.
+    pub unreadable: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskUsage {
+    pub total_bytes: u64,
+    pub free_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanResult {
+    pub removed: u64,
+    pub failures: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Cleanup {
+    /// Empty the folder but keep it, since its owner may hold it open.
+    Contents,
+    /// Remove the folder itself.
+    Whole,
+    /// Empty the folder, sparing anything that may still be in use.
+    Stale,
+    /// Remove all children except the most recent, which a running app may be using.
+    AllButNewest,
+    /// Hand over to the owning tool, which knows its own bookkeeping.
+    Command(&'static [&'static str]),
+    Nothing,
+}
+
+#[derive(Debug, Clone)]
+struct Plan {
+    target: Target,
+    cleanup: Cleanup,
+}
+
+fn plan(
+    id: String,
+    group: Group,
+    label: impl Into<String>,
+    detail: &str,
+    path: PathBuf,
+    safety: Safety,
+    cleanup: Cleanup,
+) -> Plan {
+    Plan {
+        target: Target {
+            id,
+            group,
+            label: label.into(),
+            detail: detail.to_string(),
+            path: path.to_string_lossy().into_owned(),
+            safety,
+            modified_ms: None,
+        },
+        cleanup,
+    }
+}
+
+fn fixed_plans(home: &Path) -> Vec<Plan> {
+    use Cleanup::*;
+    use Group::*;
+    use Safety::*;
+
+    #[rustfmt::skip]
+    let entries: [(&str, Group, &str, &str, &str, Safety, Cleanup); 15] = [
+        ("npm", Packages, "npm cache", "Every package npm has ever downloaded. Installs re-fetch what they need.", ".npm/_cacache", Safe, Contents),
+        ("npx", Packages, "npx cache", "Tools run once with npx. They download again next time you run them.", ".npm/_npx", Safe, Contents),
+        ("pnpm", Packages, "pnpm store", "Shared package store. Projects keep working; new installs download again.", "Library/pnpm/store", Safe, Contents),
+        ("bun", Packages, "Bun cache", "Packages Bun has downloaded. Installs re-fetch what they need.", ".bun/install/cache", Safe, Contents),
+        ("gradle", Packages, "Gradle caches", "Downloaded dependencies and build caches. The next Android build is slower.", ".gradle/caches", Safe, Contents),
+        ("gradle-dists", Packages, "Gradle distributions", "Whole copies of Gradle per version. Projects download theirs again.", ".gradle/wrapper/dists", Safe, Contents),
+        ("cargo", Packages, "Cargo registry", "Downloaded crates. The next Rust build fetches them again.", ".cargo/registry", Safe, Contents),
+        ("dot-cache", Packages, "~/.cache", "Mixed tool caches. Some hold models or data that are slow to fetch again.", ".cache", Review, Contents),
+        ("derived-data", Mobile, "Xcode DerivedData", "Build output and indexes. The next Xcode build starts from scratch.", "Library/Developer/Xcode/DerivedData", Safe, Contents),
+        ("device-support", Mobile, "iOS device support", "Symbols copied from phones you've plugged in. Xcode copies them again.", "Library/Developer/Xcode/iOS DeviceSupport", Safe, Contents),
+        ("archives", Mobile, "Xcode archives", "Builds you archived for release. Needed to symbolicate crash reports for them.", "Library/Developer/Xcode/Archives", Review, Contents),
+        ("simulators", Mobile, "Simulator devices", "Erases every simulator: installed apps and their data go. Fails if one is running.", "Library/Developer/CoreSimulator/Devices", Review, Command(&["xcrun", "simctl", "erase", "all"])),
+        ("logs", Apps, "App logs", "Logs apps wrote for troubleshooting. Nothing depends on them.", "Library/Logs", Safe, Contents),
+        ("app-support", Apps, "Application Support", "Your apps' real data: accounts, chats, projects. Clear it from inside each app.", "Library/Application Support", Keep, Nothing),
+        ("trash", Hidden, "Trash", "Everything you've already moved to the Trash.", ".Trash", Review, Contents),
+    ];
+
+    entries
+        .into_iter()
+        .map(|(id, group, label, detail, path, safety, cleanup)| {
+            plan(id.to_string(), group, label, detail, home.join(path), safety, cleanup)
+        })
+        .chain([plan(
+            "temp".to_string(),
+            Group::Hidden,
+            "Old temporary files",
+            "Temp files untouched for three days. Sockets and anything recent are left alone.",
+            std::env::temp_dir(),
+            Safety::Safe,
+            Stale,
+        )])
+        .collect()
+}
+
+fn child_names(dir: &Path) -> Vec<String> {
+    let Ok(read) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    read.flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect()
+}
+
+/// A folder name that came back from the UI: one path component, nothing more.
+fn single_component(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains('/')
+}
+
+fn cache_plan(home: &Path, name: &str) -> Plan {
+    plan(
+        format!("cache:{name}"),
+        Group::Apps,
+        name,
+        "App cache. Rebuilt as the app runs; it may feel slower at first.",
+        home.join("Library/Caches").join(name),
+        Safety::Safe,
+        Cleanup::Contents,
+    )
+}
+
+fn electron_plan(home: &Path, app: &str, folder: &str) -> Plan {
+    plan(
+        format!("electron:{app}/{folder}"),
+        Group::Apps,
+        format!("{app} · {folder}"),
+        "Web content cache inside the app's data folder. Your data isn't touched.",
+        home.join("Library/Application Support").join(app).join(folder),
+        Safety::Safe,
+        Cleanup::Contents,
+    )
+}
+
+/// Chromium clones its own bundle at launch so an update can't invalidate the running
+/// copy's signature, then deletes the clone on exit. A crash or kill leaves it behind.
+fn clones_folder() -> Option<PathBuf> {
+    std::env::temp_dir().parent().map(|p| p.join("X"))
+}
+
+fn clones_plan(name: &str) -> Option<Plan> {
+    let browser = name.strip_suffix(".code_sign_clone")?;
+    let browser = browser.rsplit('.').next().unwrap_or(browser);
+    Some(plan(
+        format!("clones:{name}"),
+        Group::Hidden,
+        format!("{browser} leftover copies"),
+        "Copies of the browser left behind by crashes. The newest is kept in case it's in use.",
+        clones_folder()?.join(name),
+        Safety::Safe,
+        Cleanup::AllButNewest,
+    ))
+}
+
+fn modified_ms(meta: &Metadata) -> Option<u64> {
+    let modified = meta.modified().ok()?;
+    Some(modified.duration_since(UNIX_EPOCH).ok()?.as_millis() as u64)
+}
+
+fn project_plan(root: &Path, artifact: &Path) -> Option<Plan> {
+    let name = artifact.file_name()?.to_string_lossy().into_owned();
+    let project = artifact.parent()?;
+    let shown = project.strip_prefix(root).unwrap_or(project).to_string_lossy().into_owned();
+    let mut out = plan(
+        format!("project:{}", artifact.display()),
+        Group::Projects,
+        format!("{shown} · {name}"),
+        "Rebuilt by reinstalling or building the project. Anything running from it will break.",
+        artifact.to_path_buf(),
+        Safety::Review,
+        Cleanup::Whole,
+    );
+    out.target.modified_ms = fs::symlink_metadata(artifact).ok().as_ref().and_then(modified_ms);
+    Some(out)
+}
+
+fn is_artifact(dir: &Path) -> bool {
+    let (Some(name), Some(project)) = (dir.file_name(), dir.parent()) else {
+        return false;
+    };
+    ARTIFACTS.iter().any(|(artifact, markers)| {
+        name.as_bytes() == artifact.as_bytes() && markers.iter().any(|m| project.join(m).is_file())
+    })
+}
+
+fn project_roots(home: &Path) -> Vec<PathBuf> {
+    PROJECT_ROOTS.iter().map(|r| home.join(r)).filter(|p| p.is_dir()).collect()
+}
+
+fn find_artifacts(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(read) = fs::read_dir(&dir) else { continue };
+        for entry in read.flatten() {
+            if !entry.file_type().is_ok_and(|t| t.is_dir()) {
+                continue;
+            }
+            let path = entry.path();
+            if is_artifact(&path) {
+                found.push(path);
+            } else if entry.file_name() != ".git" {
+                stack.push(path);
+            }
+        }
+    }
+    found
+}
+
+/// Everything worth showing on this machine. Sizes come later from [`measure`], one
+/// target at a time, because the slowest of them take minutes.
+pub fn targets(home: &Path) -> Vec<Target> {
+    let mut plans: Vec<Plan> = fixed_plans(home);
+
+    let caches = home.join("Library/Caches");
+    plans.extend(child_names(&caches).iter().map(|name| cache_plan(home, name)));
+
+    let support = home.join("Library/Application Support");
+    for app in child_names(&support) {
+        for folder in ELECTRON_CACHES {
+            plans.push(electron_plan(home, &app, folder));
+        }
+    }
+
+    if let Some(folder) = clones_folder() {
+        plans.extend(child_names(&folder).iter().filter_map(|name| clones_plan(name)));
+    }
+
+    for root in project_roots(home) {
+        plans.extend(find_artifacts(&root).iter().filter_map(|a| project_plan(&root, a)));
+    }
+
+    plans
+        .into_iter()
+        .map(|p| p.target)
+        .filter(|t| Path::new(&t.path).is_dir())
+        .collect()
+}
+
+/// Turn an id from the UI back into a plan, or refuse it. Ids carrying a path are
+/// checked as strictly as the scan that produced them: this is the delete boundary.
+fn find(id: &str, home: &Path) -> Result<Plan, String> {
+    let refused = || format!("Unknown storage target `{id}`.");
+
+    if let Some(name) = id.strip_prefix("cache:") {
+        return single_component(name).then(|| cache_plan(home, name)).ok_or_else(refused);
+    }
+    if let Some(rest) = id.strip_prefix("electron:") {
+        let (app, folder) = rest.split_once('/').ok_or_else(refused)?;
+        let valid = single_component(app) && ELECTRON_CACHES.contains(&folder);
+        return valid.then(|| electron_plan(home, app, folder)).ok_or_else(refused);
+    }
+    if let Some(name) = id.strip_prefix("clones:") {
+        return single_component(name).then(|| clones_plan(name)).flatten().ok_or_else(refused);
+    }
+    if let Some(path) = id.strip_prefix("project:") {
+        let path = Path::new(path);
+        let root = project_roots(home).into_iter().find(|r| path.starts_with(r));
+        let inside = root.filter(|_| !path.components().any(|c| c.as_os_str() == ".."));
+        return inside
+            .filter(|_| is_artifact(path))
+            .and_then(|root| project_plan(&root, path))
+            .ok_or_else(refused);
+    }
+    fixed_plans(home).into_iter().find(|p| p.target.id == id).ok_or_else(refused)
+}
+
+/// True when nothing under `path` is recent, and nothing is a socket or pipe: those
+/// keep old timestamps for as long as the process listening on them runs.
+fn is_stale(path: &Path, cutoff: SystemTime) -> bool {
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        let Ok(meta) = fs::symlink_metadata(&next) else { return false };
+        let kind = meta.file_type();
+        if kind.is_socket() || kind.is_fifo() || !meta.modified().is_ok_and(|m| m < cutoff) {
+            return false;
+        }
+        if kind.is_dir() {
+            let Ok(read) = fs::read_dir(&next) else { return false };
+            stack.extend(read.flatten().map(|e| e.path()));
+        }
+    }
+    true
+}
+
+/// The paths a plan covers. Measuring and cleaning both go through here.
+fn entries(plan: &Plan) -> Result<Vec<PathBuf>, String> {
+    let root = Path::new(&plan.target.path);
+    let children = || -> Result<Vec<PathBuf>, String> {
+        match fs::read_dir(root) {
+            Ok(read) => Ok(read.flatten().map(|e| e.path()).collect()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+            Err(e) => Err(format!("Could not read `{}`: {e}", plan.target.path)),
+        }
+    };
+
+    Ok(match plan.cleanup {
+        Cleanup::Whole | Cleanup::Command(_) | Cleanup::Nothing => vec![root.to_path_buf()],
+        Cleanup::Contents => children()?,
+        Cleanup::Stale => {
+            let cutoff = SystemTime::now() - TEMP_MIN_AGE;
+            children()?.into_iter().filter(|p| is_stale(p, cutoff)).collect()
+        }
+        Cleanup::AllButNewest => {
+            let mut all = children()?;
+            all.sort_by_key(|p| fs::symlink_metadata(p).and_then(|m| m.modified()).ok());
+            all.pop();
+            all
+        }
+    })
+}
+
+/// What APFS says about a file's data stream. Not available on other filesystems.
+struct CloneInfo {
+    id: u64,
+    references: u32,
+    private_bytes: u64,
+}
+
+fn clone_info(path: &Path) -> Option<CloneInfo> {
+    const ATTR_CMNEXT_PRIVATESIZE: u32 = 0x0000_0008;
+    const ATTR_CMNEXT_CLONEID: u32 = 0x0000_0100;
+    const ATTR_CMNEXT_CLONE_REFCNT: u32 = 0x0000_1000;
+    const FSOPT_NOFOLLOW: u32 = 0x0000_0001;
+    const FSOPT_ATTR_CMN_EXTENDED: u32 = 0x0000_0020;
+    const WANTED: u32 = ATTR_CMNEXT_PRIVATESIZE | ATTR_CMNEXT_CLONEID | ATTR_CMNEXT_CLONE_REFCNT;
+
+    // getattrlist packs results on 4-byte boundaries, ordered by attribute bit.
+    #[repr(C, packed(4))]
+    #[derive(Default)]
+    struct Reply {
+        length: u32,
+        returned: [u32; 5],
+        private_bytes: i64,
+        clone_id: u64,
+        references: u32,
+    }
+
+    let c_path = CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut request: libc::attrlist = unsafe { std::mem::zeroed() };
+    request.bitmapcount = libc::ATTR_BIT_MAP_COUNT;
+    request.commonattr = libc::ATTR_CMN_RETURNED_ATTRS;
+    request.forkattr = WANTED;
+
+    let mut reply = Reply::default();
+    let rc = unsafe {
+        libc::getattrlist(
+            c_path.as_ptr(),
+            std::ptr::addr_of_mut!(request).cast(),
+            std::ptr::addr_of_mut!(reply).cast(),
+            std::mem::size_of::<Reply>(),
+            FSOPT_NOFOLLOW | FSOPT_ATTR_CMN_EXTENDED,
+        )
+    };
+    // Field offsets only hold when the kernel returned all three. `returned` is an
+    // attribute_set_t: common, volume, directory, file, then the fork attributes.
+    let returned = reply.returned;
+    if rc != 0 || returned[4] & WANTED != WANTED {
+        return None;
+    }
+    Some(CloneInfo {
+        id: reply.clone_id,
+        references: reply.references,
+        private_bytes: reply.private_bytes.max(0) as u64,
+    })
+}
+
+#[derive(Default)]
+struct SharedStream {
+    seen: u64,
+    references: u64,
+    bytes: u64,
+    private_bytes: u64,
+}
+
+/// Sizes a set of files by what removing the whole set would free.
+///
+/// A block only comes back once nothing references it, so a hard link or clone counts
+/// in full if every reference falls inside the set, and otherwise only for the bytes
+/// private to it. Sharing between two different targets isn't visible from here, so
+/// totals err on the low side, which is the direction a promise should err.
+#[derive(Default)]
+struct Tally {
+    apparent: u64,
+    reclaimable: u64,
+    unreadable: u64,
+    clones: HashMap<u64, SharedStream>,
+    links: HashMap<u64, SharedStream>,
+}
+
+impl Tally {
+    fn add(&mut self, path: &Path, meta: &Metadata) {
+        let bytes = meta.st_blocks() * 512;
+        if meta.nlink() > 1 && meta.is_file() {
+            let link = self.links.entry(meta.ino()).or_default();
+            if link.seen == 0 {
+                self.apparent += bytes;
+            }
+            link.seen += 1;
+            link.references = meta.nlink();
+            link.bytes = bytes;
+            return;
+        }
+
+        self.apparent += bytes;
+        let info = meta.is_file().then(|| clone_info(path)).flatten();
+        match info {
+            Some(info) if info.references > 1 => {
+                let stream = self.clones.entry(info.id).or_default();
+                stream.seen += 1;
+                stream.references = u64::from(info.references);
+                stream.bytes = bytes;
+                stream.private_bytes += info.private_bytes;
+            }
+            Some(info) => self.reclaimable += info.private_bytes.min(bytes),
+            None => self.reclaimable += bytes,
+        }
+    }
+
+    fn walk(&mut self, root: &Path) {
+        let Ok(top) = fs::symlink_metadata(root) else {
+            self.unreadable += 1;
+            return;
+        };
+        // Stay on one volume: a disk image or simulator runtime mounted inside isn't
+        // something removing this folder would free.
+        let device = top.dev();
+        let mut stack = vec![(root.to_path_buf(), top)];
+        while let Some((path, meta)) = stack.pop() {
+            if meta.dev() != device {
+                continue;
+            }
+            self.add(&path, &meta);
+            if !meta.is_dir() {
+                continue;
+            }
+            let Ok(read) = fs::read_dir(&path) else {
+                self.unreadable += 1;
+                continue;
+            };
+            for entry in read.flatten() {
+                match entry.metadata() {
+                    Ok(meta) => stack.push((entry.path(), meta)),
+                    Err(_) => self.unreadable += 1,
+                }
+            }
+        }
+    }
+
+    fn finish(self) -> Measurement {
+        let links: u64 = self.links.values().filter(|l| l.seen >= l.references).map(|l| l.bytes).sum();
+        let clones: u64 = self
+            .clones
+            .values()
+            .map(|s| if s.seen >= s.references { s.bytes } else { s.private_bytes.min(s.bytes) })
+            .sum();
+        Measurement {
+            apparent_bytes: self.apparent,
+            reclaimable_bytes: self.reclaimable + links + clones,
+            unreadable: self.unreadable,
+        }
+    }
+}
+
+pub fn measure(id: &str, home: &Path) -> Result<Measurement, String> {
+    let plan = find(id, home)?;
+    let mut tally = Tally::default();
+    // macOS shuts even its owner out of some of its own caches. That's a size we
+    // can't know, not a failed scan.
+    match entries(&plan) {
+        Ok(paths) => paths.iter().for_each(|path| tally.walk(path)),
+        Err(_) => tally.unreadable += 1,
+    }
+    let mut measurement = tally.finish();
+    if plan.target.safety == Safety::Keep {
+        measurement.reclaimable_bytes = 0;
+    }
+    Ok(measurement)
+}
+
+/// The resolved path must still be where the plan says. A cache folder swapped for a
+/// symlink into something precious is the failure this exists to stop.
+fn confirm_location(plan: &Plan, home: &Path) -> Result<(), String> {
+    let path = Path::new(&plan.target.path);
+    let real = path
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve `{}`: {e}", plan.target.path))?;
+    let parent = path.parent().ok_or_else(|| "Refusing to clean a filesystem root.".to_string())?;
+    let expected = parent.canonicalize().map_err(|e| e.to_string())?;
+    let name_matches = real.file_name() == path.file_name();
+
+    // The per-user temp area sits outside home, which is why it's a second root.
+    let temp_root = std::env::temp_dir().parent().and_then(|p| p.canonicalize().ok());
+    let inside = real.starts_with(home.canonicalize().map_err(|e| e.to_string())?)
+        || temp_root.is_some_and(|t| real.starts_with(t));
+
+    if real.parent() == Some(expected.as_path()) && name_matches && inside {
+        Ok(())
+    } else {
+        Err(format!("`{}` points somewhere unexpected, so it was left alone.", plan.target.path))
+    }
+}
+
+/// `remove_dir_all` and `remove_file` act on a symlink itself, never on what it points at.
+fn remove(path: &Path) -> std::io::Result<()> {
+    if fs::symlink_metadata(path)?.is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    }
+}
+
+/// Permanently delete a target's contents. Bypasses the Trash on purpose: moving files
+/// there would free nothing. Partial success is normal, as a running app may recreate
+/// or hold files, so failures are reported rather than aborting the rest.
+pub fn clean(id: &str, home: &Path) -> Result<CleanResult, String> {
+    let plan = find(id, home)?;
+    if plan.target.safety == Safety::Keep {
+        return Err(format!("{} is never cleaned here.", plan.target.label));
+    }
+    confirm_location(&plan, home)?;
+
+    if let Cleanup::Command([program, args @ ..]) = plan.cleanup {
+        return if sh::run_ok(program, args, SIMCTL_TIMEOUT)? {
+            Ok(CleanResult { removed: 1, failures: Vec::new() })
+        } else {
+            Err(format!("`{}` failed. Shut down any running simulators and try again.", program))
+        };
+    }
+
+    let mut result = CleanResult { removed: 0, failures: Vec::new() };
+    for entry in entries(&plan)? {
+        match remove(&entry) {
+            Ok(()) => result.removed += 1,
+            Err(e) => result.failures.push(format!("{}: {e}", entry.display())),
+        }
+    }
+    Ok(result)
+}
+
+pub fn disk_usage() -> Result<DiskUsage, String> {
+    let path = CString::new(DATA_VOLUME).map_err(|e| e.to_string())?;
+    let mut stats: libc::statfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statfs(path.as_ptr(), &mut stats) } != 0 {
+        return Err(format!(
+            "Could not read disk usage: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    let block = u64::from(stats.f_bsize);
+    Ok(DiskUsage {
+        total_bytes: stats.f_blocks * block,
+        free_bytes: stats.f_bavail * block,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+
+    /// A throwaway home folder. Real paths are never touched by these tests.
+    struct Sandbox(PathBuf);
+
+    impl Sandbox {
+        fn new(name: &str) -> Self {
+            let unique = format!("system-manager-{name}-{}", std::process::id());
+            let dir = std::env::temp_dir().join(unique);
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).unwrap();
+            Sandbox(dir.canonicalize().unwrap())
+        }
+
+        fn write(&self, path: &str, bytes: usize) -> PathBuf {
+            let full = self.0.join(path);
+            fs::create_dir_all(full.parent().unwrap()).unwrap();
+            fs::write(&full, vec![7u8; bytes]).unwrap();
+            full
+        }
+    }
+
+    impl Drop for Sandbox {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    const MB: usize = 1024 * 1024;
+
+    fn clone_file(from: &Path, to: &Path) {
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        assert!(Command::new("cp").arg("-c").arg(from).arg(to).status().unwrap().success());
+    }
+
+    fn near(actual: u64, expected: usize) -> bool {
+        actual.abs_diff(expected as u64) < (MB / 8) as u64
+    }
+
+    #[test]
+    fn clones_of_a_file_outside_the_target_free_nothing() {
+        let home = Sandbox::new("clones-outside");
+        let original = home.write("app.bin", 4 * MB);
+        for n in 0..5 {
+            clone_file(&original, &home.0.join(format!(".npm/_cacache/copy{n}")));
+        }
+
+        let size = measure("npm", &home.0).unwrap();
+        assert!(near(size.apparent_bytes, 20 * MB), "{size:?}");
+        assert!(size.reclaimable_bytes < MB as u64, "{size:?}");
+    }
+
+    #[test]
+    fn clones_wholly_inside_the_target_count_once() {
+        let home = Sandbox::new("clones-inside");
+        let original = home.write(".npm/_cacache/original", 4 * MB);
+        for n in 0..3 {
+            clone_file(&original, &home.0.join(format!(".npm/_cacache/copy{n}")));
+        }
+
+        let size = measure("npm", &home.0).unwrap();
+        assert!(near(size.apparent_bytes, 16 * MB), "{size:?}");
+        assert!(near(size.reclaimable_bytes, 4 * MB), "{size:?}");
+    }
+
+    #[test]
+    fn hard_links_outside_the_target_free_nothing() {
+        let home = Sandbox::new("links");
+        let original = home.write("kept", 4 * MB);
+        fs::create_dir_all(home.0.join(".npm/_cacache")).unwrap();
+        fs::hard_link(&original, home.0.join(".npm/_cacache/link")).unwrap();
+
+        let size = measure("npm", &home.0).unwrap();
+        assert_eq!(size.reclaimable_bytes, 0, "{size:?}");
+    }
+
+    #[test]
+    fn plain_files_are_fully_reclaimable_and_get_removed() {
+        let home = Sandbox::new("plain");
+        home.write(".npm/_cacache/a", 2 * MB);
+        home.write(".npm/_cacache/deep/b", MB);
+
+        assert!(near(measure("npm", &home.0).unwrap().reclaimable_bytes, 3 * MB));
+
+        let result = clean("npm", &home.0).unwrap();
+        assert_eq!(result.removed, 2);
+        assert!(result.failures.is_empty());
+        assert!(home.0.join(".npm/_cacache").is_dir(), "the folder itself stays");
+        assert_eq!(fs::read_dir(home.0.join(".npm/_cacache")).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn cleaning_leaves_the_target_of_a_symlink_alone() {
+        let home = Sandbox::new("inner-link");
+        let precious = home.write("precious/keep.txt", 16);
+        home.write(".npm/_cacache/a", 16);
+        std::os::unix::fs::symlink(home.0.join("precious"), home.0.join(".npm/_cacache/link")).unwrap();
+
+        clean("npm", &home.0).unwrap();
+        assert!(precious.is_file());
+    }
+
+    #[test]
+    fn refuses_a_cache_folder_redirected_by_a_symlink() {
+        let home = Sandbox::new("redirect");
+        let precious = home.write("precious/keep.txt", 16);
+        fs::create_dir_all(home.0.join(".npm")).unwrap();
+        std::os::unix::fs::symlink(home.0.join("precious"), home.0.join(".npm/_cacache")).unwrap();
+
+        assert!(clean("npm", &home.0).is_err());
+        assert!(precious.is_file());
+    }
+
+    #[test]
+    fn refuses_ids_that_escape_their_folder() {
+        let home = Sandbox::new("escape");
+        home.write("Documents/thesis.txt", 16);
+        home.write("dev/app/package.json", 16);
+        home.write("dev/app/src/main.ts", 16);
+
+        for id in [
+            "cache:..",
+            "cache:../../Documents",
+            "cache:a/b",
+            "electron:../../Documents/Cache",
+            "electron:App/Documents",
+            "clones:..",
+            "clones:not-a-clone-folder",
+            "project:/etc",
+            "project:/Users",
+        ] {
+            assert!(clean(id, &home.0).is_err(), "{id} should be refused");
+        }
+
+        let outside = format!("project:{}/Documents", home.0.display());
+        let not_artifact = format!("project:{}/dev/app/src", home.0.display());
+        let traversal = format!("project:{}/dev/app/../../Documents", home.0.display());
+        for id in [outside, not_artifact, traversal] {
+            assert!(clean(&id, &home.0).is_err(), "{id} should be refused");
+        }
+        assert!(home.0.join("Documents/thesis.txt").is_file());
+        assert!(home.0.join("dev/app/src/main.ts").is_file());
+    }
+
+    #[test]
+    fn keep_targets_cannot_be_cleaned() {
+        let home = Sandbox::new("keep");
+        let data = home.write("Library/Application Support/Notes/data.db", 16);
+
+        assert!(clean("app-support", &home.0).is_err());
+        assert_eq!(measure("app-support", &home.0).unwrap().reclaimable_bytes, 0);
+        assert!(data.is_file());
+    }
+
+    #[test]
+    fn project_artifacts_need_their_marker_file() {
+        let home = Sandbox::new("markers");
+        home.write("dev/web/package.json", 16);
+        home.write("dev/web/node_modules/lib/index.js", 16);
+        home.write("dev/web/node_modules/lib/node_modules/nested/index.js", 16);
+        home.write("dev/notes/target/meeting.md", 16);
+        home.write("dev/rusty/Cargo.toml", 16);
+        home.write("dev/rusty/target/debug/app", 16);
+
+        let found = targets(&home.0);
+        let projects: Vec<_> = found.iter().filter(|t| t.group == Group::Projects).collect();
+        assert_eq!(projects.len(), 2, "{projects:?}");
+        assert!(projects.iter().all(|t| t.safety == Safety::Review));
+        assert!(!projects.iter().any(|t| t.path.contains("notes")));
+
+        let web = projects.iter().find(|t| t.path.ends_with("web/node_modules")).unwrap();
+        assert_eq!(web.label, "web · node_modules");
+        clean(&web.id, &home.0).unwrap();
+        assert!(!home.0.join("dev/web/node_modules").exists());
+        assert!(home.0.join("dev/web/package.json").is_file());
+        assert!(home.0.join("dev/notes/target/meeting.md").is_file());
+    }
+
+    #[test]
+    fn all_but_newest_spares_the_most_recent_entry() {
+        let home = Sandbox::new("newest");
+        let old = home.write("old/copy", 16);
+        let new = home.write("new/copy", 16);
+        let long_ago = fs::FileTimes::new().set_modified(SystemTime::now() - TEMP_MIN_AGE);
+        fs::File::open(old.parent().unwrap()).unwrap().set_times(long_ago).unwrap();
+
+        let target = plan(
+            "t".into(),
+            Group::Hidden,
+            "t",
+            "",
+            home.0.clone(),
+            Safety::Safe,
+            Cleanup::AllButNewest,
+        );
+        let chosen = entries(&target).unwrap();
+        assert!(chosen.contains(&old.parent().unwrap().to_path_buf()));
+        assert!(!chosen.contains(&new.parent().unwrap().to_path_buf()));
+    }
+
+    #[test]
+    fn staleness_is_judged_on_everything_inside() {
+        let home = Sandbox::new("stale");
+        let cutoff = SystemTime::now() - Duration::from_secs(60);
+        let fresh = home.write("job/nested/fresh", 16);
+        assert!(!is_stale(fresh.parent().unwrap().parent().unwrap(), cutoff));
+
+        let future = SystemTime::now() + Duration::from_secs(60);
+        assert!(is_stale(&fresh, future));
+
+        let socket = home.0.join("agent.sock");
+        std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        assert!(!is_stale(&socket, future), "a socket may have a live listener");
+    }
+}
