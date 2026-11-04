@@ -60,9 +60,18 @@ and watches the filesystem. Freeze it, keep the port, thaw it when you come back
 ## Storage
 
 System Settings lumps caches, package stores and hidden folders together as System
-Data and offers no way to clear them. The Storage tab breaks that down into package
-manager caches, app caches and logs, Xcode and simulator data, hidden system files,
-and build folders in your projects.
+Data and offers no way to clear them. The Storage tab uses the same categories as
+System Settings, from Applications to System Data, and each one opens to show what's
+inside. Your own folders can be drilled into as far as you like.
+
+What happens to an item depends on whether it can come back:
+
+| Category | What you can do |
+| --- | --- |
+| Developer, System Data | Delete. These rebuild themselves, so they skip the Trash. |
+| Applications, Documents, iCloud Drive | Move to the Trash, with Put Back available. Space returns once it's emptied. |
+| Messages, Photos | View only, with a button to open the app. Removing files from inside these libraries corrupts them. |
+| macOS | View only. |
 
 **Sizes are what you'd get back, not what `du` says.** APFS clones and hard links
 share disk blocks, so a folder can look enormous and free almost nothing. Chrome
@@ -78,16 +87,19 @@ Every item carries a tier:
 | **Review** | Removable, but check first: it may hold something you can't simply rebuild. |
 | **Keep** | Shown so the space is accounted for. It can't be deleted here. |
 
-Nothing is selected by default, and cleaning always asks first. Deleted files skip the
-Trash, because moving them there wouldn't free any space.
+Nothing is selected by default, and cleaning always asks first.
 
-- The UI sends an id, never a path. The backend resolves it and rejects anything that
-  escapes its folder.
+- The UI sends an id, never a path to delete. The backend resolves it and rejects
+  anything that escapes its folder. Your home Library, dotfiles such as `~/.ssh`, the
+  inside of a `.git` folder and photo libraries can't be reached at all.
+- Apps must be quit first, and System Manager won't remove itself.
 - What gets measured is exactly what gets deleted: both walk the same list.
 - A cache folder replaced by a symlink is refused, and symlinks inside are removed
   without following them.
 - Project folders only count alongside their marker file, so a `target` folder with
   no `Cargo.toml` beside it is ignored. Projects with a listening port can't be selected.
+- Folders System Integrity Protection guards are skipped, not attempted: nothing can
+  delete them, not even root. Anything else macOS refuses is reported as protected.
 - Temp files younger than three days, and sockets of any age, are left alone. The
   newest browser clone is kept because a running browser may be using it.
 
