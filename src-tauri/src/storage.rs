@@ -914,13 +914,49 @@ fn volume_stats(volume: &str) -> Result<libc::statfs, String> {
     Ok(stats)
 }
 
+/// Space one volume uses. `statfs` can't answer this: APFS volumes share a container,
+/// so each reports the whole container's usage, and adding two counts it twice.
+fn volume_used(volume: &str) -> Result<u64, String> {
+    const ATTR_VOL_SPACEUSED: u32 = 0x0080_0000;
+    const ATTR_VOL_INFO: u32 = 0x8000_0000;
+
+    #[repr(C, packed(4))]
+    #[derive(Default)]
+    struct Reply {
+        length: u32,
+        used: i64,
+    }
+
+    let path = CString::new(volume).map_err(|e| e.to_string())?;
+    let mut request: libc::attrlist = unsafe { std::mem::zeroed() };
+    request.bitmapcount = libc::ATTR_BIT_MAP_COUNT;
+    request.volattr = ATTR_VOL_INFO | ATTR_VOL_SPACEUSED;
+
+    let mut reply = Reply::default();
+    let rc = unsafe {
+        libc::getattrlist(
+            path.as_ptr(),
+            std::ptr::addr_of_mut!(request).cast(),
+            std::ptr::addr_of_mut!(reply).cast(),
+            std::mem::size_of::<Reply>(),
+            0,
+        )
+    };
+    if rc != 0 {
+        return Err(format!(
+            "Could not read the size of {volume}: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok(reply.used.max(0) as u64)
+}
+
 pub fn disk_usage() -> Result<DiskUsage, String> {
     let data = volume_stats(DATA_VOLUME)?;
     let block = u64::from(data.f_bsize);
     let mut system_bytes = 0;
     for volume in SYSTEM_VOLUMES {
-        let stats = volume_stats(volume)?;
-        system_bytes += (stats.f_blocks - stats.f_bfree) * u64::from(stats.f_bsize);
+        system_bytes += volume_used(volume)?;
     }
     Ok(DiskUsage {
         total_bytes: data.f_blocks * block,
@@ -1222,6 +1258,26 @@ mod tests {
         let home = Sandbox::new("gone");
         let size = measure("npm", &home.0).unwrap();
         assert_eq!((size.apparent_bytes, size.unreadable), (0, 0));
+    }
+
+    /// `df` reads the per-volume figure, so it's the independent check on ours.
+    #[test]
+    fn system_size_agrees_with_df_for_each_volume() {
+        for volume in SYSTEM_VOLUMES {
+            let output = Command::new("df").args(["-k", volume]).output().unwrap();
+            let output = String::from_utf8(output.stdout).unwrap();
+            let used_kb: u64 = output
+                .lines()
+                .nth(1)
+                .and_then(|line| line.split_whitespace().nth(2))
+                .and_then(|used| used.parse().ok())
+                .unwrap();
+            let ours = volume_used(volume).unwrap();
+            assert!(ours.abs_diff(used_kb * 1024) < 100_000_000, "{volume}: {ours} vs {used_kb}KB");
+        }
+
+        let disk = disk_usage().unwrap();
+        assert!(disk.system_bytes < disk.total_bytes - disk.free_bytes);
     }
 
     fn lock(path: &Path, flag: &str) {

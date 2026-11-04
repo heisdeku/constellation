@@ -48,6 +48,16 @@ fn measures_every_target_on_this_machine() {
         );
     }
 
+    eprintln!("\nCan't be removed here:");
+    for (target, size) in results.iter().filter(|(t, _)| t.safety == storage::Safety::Keep) {
+        eprintln!(
+            "{:>7.2}GB  {} ({} unreadable)",
+            gb(size.apparent_bytes),
+            target.label,
+            size.unreadable
+        );
+    }
+
     let disk = storage::disk_usage().expect("disk usage");
     assert!(disk.free_bytes < disk.total_bytes);
     let tier = |safety: storage::Safety| -> u64 {
@@ -59,12 +69,13 @@ fn measures_every_target_on_this_machine() {
     };
     let unreadable: u64 = results.iter().map(|(_, s)| s.unreadable).sum();
     eprintln!(
-        "\n{} targets · safe {:.1}GB · review {:.1}GB · {} unreadable · {:.1}GB free of {:.1}GB",
+        "\n{} targets · safe {:.1}GB · review {:.1}GB · {} unreadable · {:.1}GB free of {:.1}GB · macOS {:.1}GB",
         results.len(),
         gb(tier(storage::Safety::Safe)),
         gb(tier(storage::Safety::Review)),
         unreadable,
         gb(disk.free_bytes),
-        gb(disk.total_bytes)
+        gb(disk.total_bytes),
+        gb(disk.system_bytes)
     );
 }

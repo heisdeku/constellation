@@ -239,6 +239,7 @@ function StoragePage() {
             <Overview
               disk={disk}
               totals={totals}
+              notes={categoryNotes(targets, measurements, scanning)}
               selectedBytes={chosenBytes}
               scanning={scanning}
               onScan={() => void scan()}
@@ -313,15 +314,38 @@ function categoryTotals(
   return { ...known, system: Math.max(used - claimed, sum('system')) }
 }
 
+/** What to show instead of a number that isn't known yet or can't be known at all. */
+function categoryNotes(
+  targets: StorageTarget[],
+  measurements: ReadonlyMap<string, Measurement>,
+  scanning: boolean,
+): Partial<Record<CategoryId, string>> {
+  const notes: Partial<Record<CategoryId, string>> = {}
+  for (const { category, group } of SECTIONS) {
+    const rows = targets.filter((t) => t.group === group)
+    const denied = rows.some((t) => {
+      const m = measurements.get(t.id)
+      return m && m.apparentBytes === 0 && m.unreadable > 0
+    })
+    if (denied) notes[category] = 'No access'
+    if (scanning && rows.some((t) => !measurements.has(t.id))) notes[category] = 'Calculating…'
+  }
+  // System Data is the remainder, so it's only known once everything else is.
+  if (scanning) notes.system = 'Calculating…'
+  return notes
+}
+
 function Overview({
   disk,
   totals,
+  notes,
   selectedBytes,
   scanning,
   onScan,
 }: {
   disk: DiskUsage | null
   totals: Record<CategoryId, number>
+  notes: Partial<Record<CategoryId, string>>
   selectedBytes: number
   scanning: boolean
   onScan: () => void
@@ -383,8 +407,8 @@ function Overview({
               </span>
               <span className="text-[12.5px] font-medium text-ink">{c.label}</span>
               <span className={cx('ml-auto size-[7px] rounded-full', c.bar)} />
-              <span className="w-[76px] text-right text-[12.5px] tabular-nums text-ink-dim">
-                {formatBytes(totals[c.id])}
+              <span className="w-[86px] text-right text-[12.5px] tabular-nums text-ink-dim">
+                {notes[c.id] ?? formatBytes(totals[c.id])}
               </span>
             </>
           )
