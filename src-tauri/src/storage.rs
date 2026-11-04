@@ -7,6 +7,9 @@
 //! - **The UI never sends a path to delete.** It sends a target id, which [`find`]
 //!   resolves and validates here. [`entries`] is the one list both measuring and
 //!   cleaning walk, so what was measured is exactly what gets removed.
+//!
+//! Anything rebuildable is deleted outright. Your own apps and files can't come back
+//! from a reinstall, so those go to the Trash instead.
 
 use std::collections::HashMap;
 use std::ffi::CString;
@@ -23,6 +26,19 @@ use crate::sh;
 
 const DATA_VOLUME: &str = "/System/Volumes/Data";
 const SIMCTL_TIMEOUT: Duration = Duration::from_secs(120);
+const FINDER_TIMEOUT: Duration = Duration::from_secs(30);
+const PS_TIMEOUT: Duration = Duration::from_secs(4);
+/// Volumes that together hold macOS itself, separate from the Data volume.
+const SYSTEM_VOLUMES: &[&str] = &["/", "/System/Volumes/Preboot"];
+const APPLICATIONS: &str = "/Applications";
+/// Never trash the app doing the trashing.
+const OWN_BUNDLE: &str = "System Manager.app";
+/// Package-style libraries: their insides belong to the owning app, and removing a
+/// file from one corrupts it. Git history is lost the same way.
+const OPAQUE_SUFFIXES: &[&str] = &[".photoslibrary", ".musiclibrary", ".tvlibrary", ".git"];
+/// Home folders holding your own files, shown under Documents and browsable.
+const FILE_FOLDERS: &[&str] = &["Documents", "Downloads", "Desktop", "Movies", "Music"];
+const ICLOUD_FOLDER: &str = "Library/Mobile Documents";
 /// Temp files younger than this may belong to something still running.
 const TEMP_MIN_AGE: Duration = Duration::from_secs(3 * 24 * 60 * 60);
 
@@ -41,6 +57,10 @@ const ARTIFACTS: &[(&str, &[&str])] = &[
     ("build", &["build.gradle", "build.gradle.kts"]),
     (".gradle", &["settings.gradle", "settings.gradle.kts", "build.gradle", "build.gradle.kts"]),
 ];
+
+/// `st_flags` bits that make unlink fail for everyone, root included. System Integrity
+/// Protection marks its folders with `sunlnk`, so asking would only ever produce an error.
+const UNDELETABLE: u32 = libc::UF_IMMUTABLE | libc::SF_IMMUTABLE | 0x0010_0000; // SF_NOUNLINK
 
 /// Regenerated folders that Electron apps keep in Application Support.
 const ELECTRON_CACHES: &[&str] = &["Cache", "Code Cache", "GPUCache", "CachedData", "DawnCache"];
@@ -64,6 +84,22 @@ pub enum Group {
     Apps,
     Hidden,
     Projects,
+    Applications,
+    Documents,
+    Icloud,
+    Messages,
+    Photos,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Disposal {
+    /// Gone for good. Used only for what rebuilds itself.
+    Delete,
+    /// Recoverable, but frees nothing until the Trash is emptied.
+    Trash,
+    /// Can't be removed from here.
+    None,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -76,6 +112,9 @@ pub struct Target {
     pub detail: String,
     pub path: String,
     pub safety: Safety,
+    pub disposal: Disposal,
+    /// True when the UI can open this to list what's inside.
+    pub browsable: bool,
     /// Project folders only: when the folder last changed, to spot abandoned projects.
     pub modified_ms: Option<u64>,
 }
@@ -96,12 +135,16 @@ pub struct Measurement {
 pub struct DiskUsage {
     pub total_bytes: u64,
     pub free_bytes: u64,
+    /// Space macOS itself occupies, outside the Data volume.
+    pub system_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CleanResult {
     pub removed: u64,
+    /// Entries macOS refused to let go of. Retrying can't help, so these aren't failures.
+    pub protected_items: u64,
     pub failures: Vec<String>,
 }
 
@@ -117,6 +160,8 @@ enum Cleanup {
     AllButNewest,
     /// Hand over to the owning tool, which knows its own bookkeeping.
     Command(&'static [&'static str]),
+    /// Move the path itself to the Trash, through Finder so Put Back works.
+    Trash,
     Nothing,
 }
 
@@ -135,6 +180,11 @@ fn plan(
     safety: Safety,
     cleanup: Cleanup,
 ) -> Plan {
+    let disposal = match cleanup {
+        Cleanup::Trash => Disposal::Trash,
+        Cleanup::Nothing => Disposal::None,
+        _ => Disposal::Delete,
+    };
     Plan {
         target: Target {
             id,
@@ -143,6 +193,8 @@ fn plan(
             detail: detail.to_string(),
             path: path.to_string_lossy().into_owned(),
             safety,
+            disposal,
+            browsable: false,
             modified_ms: None,
         },
         cleanup,
@@ -188,6 +240,153 @@ fn fixed_plans(home: &Path) -> Vec<Plan> {
             Stale,
         )])
         .collect()
+}
+
+/// The folders of your own that appear as rows, each opened to act on what's inside.
+fn location_plans(home: &Path) -> Vec<Plan> {
+    let folder = |name: &str, group, detail: &str| {
+        let mut out = plan(
+            format!("folder:{name}"),
+            group,
+            name.rsplit('/').next().unwrap_or(name),
+            detail,
+            home.join(name),
+            Safety::Keep,
+            Cleanup::Nothing,
+        );
+        out.target.browsable = true;
+        out
+    };
+
+    let mut plans: Vec<Plan> = FILE_FOLDERS
+        .iter()
+        .chain(PROJECT_ROOTS)
+        .map(|name| folder(name, Group::Documents, "Open to see what's taking up space."))
+        .collect();
+    plans.push(folder(
+        ICLOUD_FOLDER,
+        Group::Icloud,
+        "Only what's downloaded to this Mac counts here.",
+    ));
+    plans.push(plan(
+        "messages".to_string(),
+        Group::Messages,
+        "Messages",
+        "Conversations and attachments. Delete them in Messages: removing the files breaks its library.",
+        home.join("Library/Messages"),
+        Safety::Keep,
+        Cleanup::Nothing,
+    ));
+    plans.push(plan(
+        "photos".to_string(),
+        Group::Photos,
+        "Photos Library",
+        "Delete in Photos: removing files from inside the library corrupts it.",
+        home.join("Pictures/Photos Library.photoslibrary"),
+        Safety::Keep,
+        Cleanup::Nothing,
+    ));
+    plans
+}
+
+fn app_folders(home: &Path) -> [PathBuf; 2] {
+    [PathBuf::from(APPLICATIONS), home.join("Applications")]
+}
+
+fn app_plan(path: &Path) -> Plan {
+    let name = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+    plan(
+        format!("app:{}", path.display()),
+        Group::Applications,
+        name,
+        "Moves the app to the Trash. Its settings and data stay in your Library.",
+        path.to_path_buf(),
+        Safety::Review,
+        Cleanup::Trash,
+    )
+}
+
+/// A real, removable app: symlinks like Safari's point into the sealed system.
+fn is_removable_app(path: &Path) -> bool {
+    let is_app = path.extension().is_some_and(|e| e == "app");
+    let own = path.file_name().is_some_and(|n| n == OWN_BUNDLE);
+    is_app && !own && fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()) && !undeletable(path)
+}
+
+fn app_plans(home: &Path) -> Vec<Plan> {
+    app_folders(home)
+        .iter()
+        .flat_map(|dir| fs::read_dir(dir).into_iter().flatten().flatten())
+        .map(|e| e.path())
+        .filter(|p| is_removable_app(p))
+        .map(|p| app_plan(&p))
+        .collect()
+}
+
+fn browse_roots(home: &Path) -> Vec<PathBuf> {
+    FILE_FOLDERS
+        .iter()
+        .chain(PROJECT_ROOTS)
+        .chain([&ICLOUD_FOLDER])
+        .map(|r| home.join(r))
+        .collect()
+}
+
+fn is_opaque(path: &Path) -> bool {
+    path.components().any(|c| {
+        let name = c.as_os_str().to_string_lossy();
+        OPAQUE_SUFFIXES.iter().any(|s| name.ends_with(s))
+    })
+}
+
+/// Something of yours that may be moved to the Trash: strictly inside a browsable
+/// folder, reached without `..`, and not a symlink leading somewhere else.
+fn is_browsable_item(path: &Path, home: &Path) -> bool {
+    let inside = browse_roots(home).iter().any(|r| path.starts_with(r) && path != r);
+    inside
+        && !path.components().any(|c| c.as_os_str() == "..")
+        && !is_opaque(path)
+        && !undeletable(path)
+        && fs::symlink_metadata(path).is_ok()
+}
+
+fn item_plan(path: &Path, home: &Path) -> Plan {
+    let icloud = path.starts_with(home.join(ICLOUD_FOLDER));
+    let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+    let detail = if icloud {
+        "Moving this to the Trash removes it from iCloud on all your devices."
+    } else {
+        "Moves to the Trash, so you can put it back. Space returns once the Trash is emptied."
+    };
+    let mut out = plan(
+        format!("item:{}", path.display()),
+        if icloud { Group::Icloud } else { Group::Documents },
+        name,
+        detail,
+        path.to_path_buf(),
+        Safety::Review,
+        Cleanup::Trash,
+    );
+    let meta = fs::symlink_metadata(path).ok();
+    out.target.browsable = meta.as_ref().is_some_and(|m| m.is_dir());
+    out.target.modified_ms = meta.as_ref().and_then(modified_ms);
+    out
+}
+
+/// What's directly inside a folder, for drilling down from a row.
+pub fn children(path: &str, home: &Path) -> Result<Vec<Target>, String> {
+    let dir = Path::new(path);
+    let is_root = browse_roots(home).iter().any(|r| r == dir);
+    if !is_root && !is_browsable_item(dir, home) {
+        return Err(format!("`{path}` can't be browsed here."));
+    }
+    let read = fs::read_dir(dir).map_err(|e| format!("Could not read `{path}`: {e}"))?;
+    Ok(read
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| is_browsable_item(p, home))
+        .map(|p| item_plan(&p, home).target)
+        .collect())
 }
 
 fn child_names(dir: &Path) -> Vec<String> {
@@ -308,6 +507,8 @@ fn find_artifacts(root: &Path) -> Vec<PathBuf> {
 /// target at a time, because the slowest of them take minutes.
 pub fn targets(home: &Path) -> Vec<Target> {
     let mut plans: Vec<Plan> = fixed_plans(home);
+    plans.extend(location_plans(home));
+    plans.extend(app_plans(home));
 
     let caches = home.join("Library/Caches");
     plans.extend(child_names(&caches).iter().map(|name| cache_plan(home, name)));
@@ -359,7 +560,20 @@ fn find(id: &str, home: &Path) -> Result<Plan, String> {
             .and_then(|root| project_plan(&root, path))
             .ok_or_else(refused);
     }
-    fixed_plans(home).into_iter().find(|p| p.target.id == id).ok_or_else(refused)
+    if let Some(path) = id.strip_prefix("app:") {
+        let path = Path::new(path);
+        let listed = path.parent().is_some_and(|p| app_folders(home).iter().any(|f| f == p));
+        return (listed && is_removable_app(path)).then(|| app_plan(path)).ok_or_else(refused);
+    }
+    if let Some(path) = id.strip_prefix("item:") {
+        let path = Path::new(path);
+        return is_browsable_item(path, home).then(|| item_plan(path, home)).ok_or_else(refused);
+    }
+    fixed_plans(home)
+        .into_iter()
+        .chain(location_plans(home))
+        .find(|p| p.target.id == id)
+        .ok_or_else(refused)
 }
 
 /// True when nothing under `path` is recent, and nothing is a socket or pipe: those
@@ -380,19 +594,29 @@ fn is_stale(path: &Path, cutoff: SystemTime) -> bool {
     true
 }
 
+fn undeletable(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|m| m.st_flags() & UNDELETABLE != 0)
+}
+
 /// The paths a plan covers. Measuring and cleaning both go through here.
 fn entries(plan: &Plan) -> Result<Vec<PathBuf>, String> {
     let root = Path::new(&plan.target.path);
     let children = || -> Result<Vec<PathBuf>, String> {
         match fs::read_dir(root) {
-            Ok(read) => Ok(read.flatten().map(|e| e.path()).collect()),
+            Ok(read) => Ok(read
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| !undeletable(p))
+                .collect()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
             Err(e) => Err(format!("Could not read `{}`: {e}", plan.target.path)),
         }
     };
 
     Ok(match plan.cleanup {
-        Cleanup::Whole | Cleanup::Command(_) | Cleanup::Nothing => vec![root.to_path_buf()],
+        Cleanup::Whole | Cleanup::Command(_) | Cleanup::Trash | Cleanup::Nothing => {
+            vec![root.to_path_buf()]
+        }
         Cleanup::Contents => children()?,
         Cleanup::Stale => {
             let cutoff = SystemTime::now() - TEMP_MIN_AGE;
@@ -515,9 +739,14 @@ impl Tally {
     }
 
     fn walk(&mut self, root: &Path) {
-        let Ok(top) = fs::symlink_metadata(root) else {
-            self.unreadable += 1;
-            return;
+        let top = match fs::symlink_metadata(root) {
+            Ok(top) => top,
+            // Already gone, say just after being cleaned: that's zero, not a mystery.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(_) => {
+                self.unreadable += 1;
+                return;
+            }
         };
         // Stay on one volume: a disk image or simulator runtime mounted inside isn't
         // something removing this folder would free.
@@ -589,6 +818,7 @@ fn confirm_location(plan: &Plan, home: &Path) -> Result<(), String> {
     // The per-user temp area sits outside home, which is why it's a second root.
     let temp_root = std::env::temp_dir().parent().and_then(|p| p.canonicalize().ok());
     let inside = real.starts_with(home.canonicalize().map_err(|e| e.to_string())?)
+        || real.starts_with(APPLICATIONS)
         || temp_root.is_some_and(|t| real.starts_with(t));
 
     if real.parent() == Some(expected.as_path()) && name_matches && inside {
@@ -607,6 +837,31 @@ fn remove(path: &Path) -> std::io::Result<()> {
     }
 }
 
+fn is_running(app: &Path) -> Result<bool, String> {
+    let bundle = format!("{}/Contents/", app.display());
+    Ok(sh::run("ps", &["-axo", "comm="], PS_TIMEOUT)?.lines().any(|l| l.starts_with(&bundle)))
+}
+
+/// Through Finder rather than a rename, so Put Back works and name clashes are handled.
+/// The path travels as an argument, never as script text.
+fn move_to_trash(path: &str) -> Result<(), String> {
+    let script = [
+        "-e",
+        "on run argv",
+        "-e",
+        "tell application \"Finder\" to delete (POSIX file (item 1 of argv) as alias)",
+        "-e",
+        "end run",
+        path,
+    ];
+    if sh::run_ok("osascript", &script, FINDER_TIMEOUT)? {
+        return Ok(());
+    }
+    Err("Finder couldn't move it to the Trash. Allow System Manager to control Finder in \
+         System Settings › Privacy & Security › Automation, or check you own the item."
+        .to_string())
+}
+
 /// Permanently delete a target's contents. Bypasses the Trash on purpose: moving files
 /// there would free nothing. Partial success is normal, as a running app may recreate
 /// or hold files, so failures are reported rather than aborting the rest.
@@ -617,26 +872,38 @@ pub fn clean(id: &str, home: &Path) -> Result<CleanResult, String> {
     }
     confirm_location(&plan, home)?;
 
+    if plan.cleanup == Cleanup::Trash {
+        let path = Path::new(&plan.target.path);
+        if plan.target.group == Group::Applications && is_running(path)? {
+            return Err(format!("Quit {} first.", plan.target.label));
+        }
+        move_to_trash(&plan.target.path)?;
+        return Ok(CleanResult { removed: 1, protected_items: 0, failures: Vec::new() });
+    }
+
     if let Cleanup::Command([program, args @ ..]) = plan.cleanup {
         return if sh::run_ok(program, args, SIMCTL_TIMEOUT)? {
-            Ok(CleanResult { removed: 1, failures: Vec::new() })
+            Ok(CleanResult { removed: 1, protected_items: 0, failures: Vec::new() })
         } else {
             Err(format!("`{}` failed. Shut down any running simulators and try again.", program))
         };
     }
 
-    let mut result = CleanResult { removed: 0, failures: Vec::new() };
+    let mut result = CleanResult { removed: 0, protected_items: 0, failures: Vec::new() };
     for entry in entries(&plan)? {
         match remove(&entry) {
             Ok(()) => result.removed += 1,
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                result.protected_items += 1
+            }
             Err(e) => result.failures.push(format!("{}: {e}", entry.display())),
         }
     }
     Ok(result)
 }
 
-pub fn disk_usage() -> Result<DiskUsage, String> {
-    let path = CString::new(DATA_VOLUME).map_err(|e| e.to_string())?;
+fn volume_stats(volume: &str) -> Result<libc::statfs, String> {
+    let path = CString::new(volume).map_err(|e| e.to_string())?;
     let mut stats: libc::statfs = unsafe { std::mem::zeroed() };
     if unsafe { libc::statfs(path.as_ptr(), &mut stats) } != 0 {
         return Err(format!(
@@ -644,10 +911,21 @@ pub fn disk_usage() -> Result<DiskUsage, String> {
             std::io::Error::last_os_error()
         ));
     }
-    let block = u64::from(stats.f_bsize);
+    Ok(stats)
+}
+
+pub fn disk_usage() -> Result<DiskUsage, String> {
+    let data = volume_stats(DATA_VOLUME)?;
+    let block = u64::from(data.f_bsize);
+    let mut system_bytes = 0;
+    for volume in SYSTEM_VOLUMES {
+        let stats = volume_stats(volume)?;
+        system_bytes += (stats.f_blocks - stats.f_bfree) * u64::from(stats.f_bsize);
+    }
     Ok(DiskUsage {
-        total_bytes: stats.f_blocks * block,
-        free_bytes: stats.f_bavail * block,
+        total_bytes: data.f_blocks * block,
+        free_bytes: data.f_bavail * block,
+        system_bytes,
     })
 }
 
@@ -672,6 +950,8 @@ mod tests {
             let full = self.0.join(path);
             fs::create_dir_all(full.parent().unwrap()).unwrap();
             fs::write(&full, vec![7u8; bytes]).unwrap();
+            // APFS allocates lazily, so sizes aren't settled until the data is on disk.
+            fs::File::open(&full).unwrap().sync_all().unwrap();
             full
         }
     }
@@ -852,6 +1132,131 @@ mod tests {
         let chosen = entries(&target).unwrap();
         assert!(chosen.contains(&old.parent().unwrap().to_path_buf()));
         assert!(!chosen.contains(&new.parent().unwrap().to_path_buf()));
+    }
+
+    #[test]
+    fn your_files_go_to_the_trash_and_stay_inside_their_folders() {
+        let home = Sandbox::new("items");
+        let file = home.write("Downloads/movie.mp4", 16);
+        home.write(".ssh/id_rsa", 16);
+        home.write("dev/app/.git/config", 16);
+        home.write("Pictures/Photos Library.photoslibrary/database", 16);
+        home.write("Library/Preferences/app.plist", 16);
+
+        let target = find(&format!("item:{}", file.display()), &home.0).unwrap().target;
+        assert_eq!(target.disposal, Disposal::Trash);
+        assert_eq!(target.safety, Safety::Review);
+
+        for path in [
+            "Downloads",
+            ".ssh/id_rsa",
+            "dev/app/.git/config",
+            "Library/Preferences/app.plist",
+            "Pictures/Photos Library.photoslibrary/database",
+            "Downloads/../.ssh/id_rsa",
+        ] {
+            let id = format!("item:{}", home.0.join(path).display());
+            assert!(find(&id, &home.0).is_err(), "{path} should be refused");
+        }
+        assert!(find("item:/etc/hosts", &home.0).is_err());
+    }
+
+    #[test]
+    fn browsing_hides_what_cannot_be_acted_on() {
+        let home = Sandbox::new("browse");
+        home.write("dev/app/src/main.ts", 16);
+        home.write("dev/app/.git/config", 16);
+
+        let root = home.0.join("dev/app");
+        let names: Vec<_> = children(root.to_str().unwrap(), &home.0)
+            .unwrap()
+            .into_iter()
+            .map(|t| t.label)
+            .collect();
+        assert_eq!(names, ["src"]);
+
+        assert!(children("/etc", &home.0).is_err());
+        assert!(children(home.0.to_str().unwrap(), &home.0).is_err());
+    }
+
+    #[test]
+    fn apps_must_be_real_bundles_in_an_applications_folder() {
+        let home = Sandbox::new("apps");
+        home.write("Applications/Tool.app/Contents/Info.plist", 16);
+        home.write("Applications/System Manager.app/Contents/Info.plist", 16);
+        home.write("Documents/Tool.app/Contents/Info.plist", 16);
+        std::os::unix::fs::symlink(
+            home.0.join("Applications/Tool.app"),
+            home.0.join("Applications/Link.app"),
+        )
+        .unwrap();
+
+        let app = |path: &str| format!("app:{}", home.0.join(path).display());
+        let tool = find(&app("Applications/Tool.app"), &home.0).unwrap().target;
+        assert_eq!(tool.label, "Tool");
+        assert_eq!(tool.disposal, Disposal::Trash);
+
+        for path in [
+            "Applications/System Manager.app",
+            "Applications/Link.app",
+            "Documents/Tool.app",
+            "Applications/Tool.app/Contents",
+        ] {
+            assert!(find(&app(path), &home.0).is_err(), "{path} should be refused");
+        }
+    }
+
+    #[test]
+    fn messages_and_photos_cannot_be_cleaned() {
+        let home = Sandbox::new("libraries");
+        home.write("Library/Messages/chat.db", 16);
+        home.write("Pictures/Photos Library.photoslibrary/database", 16);
+
+        assert!(clean("messages", &home.0).is_err());
+        assert!(clean("photos", &home.0).is_err());
+        assert!(clean("folder:Documents", &home.0).is_err());
+    }
+
+    #[test]
+    fn a_target_that_has_gone_measures_as_empty_not_unreadable() {
+        let home = Sandbox::new("gone");
+        let size = measure("npm", &home.0).unwrap();
+        assert_eq!((size.apparent_bytes, size.unreadable), (0, 0));
+    }
+
+    fn lock(path: &Path, flag: &str) {
+        assert!(Command::new("chflags").arg(flag).arg(path).status().unwrap().success());
+    }
+
+    #[test]
+    fn folders_macos_protects_are_neither_counted_nor_attempted() {
+        let home = Sandbox::new("protected-top");
+        let locked = home.write(".npm/_cacache/locked/data", MB);
+        home.write(".npm/_cacache/plain", MB);
+        lock(locked.parent().unwrap(), "uchg");
+
+        let size = measure("npm", &home.0).unwrap();
+        let result = clean("npm", &home.0).unwrap();
+        lock(locked.parent().unwrap(), "nouchg");
+
+        assert!(near(size.reclaimable_bytes, MB), "{size:?}");
+        assert_eq!((result.removed, result.protected_items), (1, 0));
+        assert!(result.failures.is_empty());
+        assert!(locked.is_file());
+        assert!(!home.0.join(".npm/_cacache/plain").exists());
+    }
+
+    #[test]
+    fn protection_found_deeper_down_is_reported_not_failed() {
+        let home = Sandbox::new("protected-nested");
+        let locked = home.write(".npm/_cacache/folder/locked", 16);
+        lock(&locked, "uchg");
+
+        let result = clean("npm", &home.0).unwrap();
+        lock(&locked, "nouchg");
+
+        assert_eq!((result.removed, result.protected_items), (0, 1));
+        assert!(result.failures.is_empty());
     }
 
     #[test]

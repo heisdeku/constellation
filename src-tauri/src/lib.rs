@@ -87,6 +87,14 @@ async fn storage_targets() -> Result<Vec<Target>, String> {
 }
 
 #[tauri::command]
+async fn storage_children(path: String) -> Result<Vec<Target>, String> {
+    let home = home()?;
+    tauri::async_runtime::spawn_blocking(move || storage::children(&path, &home))
+        .await
+        .map_err(|e| format!("browse task failed: {e}"))?
+}
+
+#[tauri::command]
 async fn measure_target(id: String) -> Result<Measurement, String> {
     let home = home()?;
     tauri::async_runtime::spawn_blocking(move || storage::measure(&id, &home))
@@ -116,6 +124,7 @@ pub fn run() {
             open_in_editor,
             disk_usage,
             storage_targets,
+            storage_children,
             measure_target,
             clean_target,
         ])
