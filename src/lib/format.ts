@@ -62,6 +62,25 @@ export function formatUptime(seconds: number): string {
   return `${d}d ${h % 24}h`
 }
 
+export function formatBytes(bytes: number): string {
+  if (bytes < 1000) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unit = -1
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000
+    unit += 1
+  }
+  return `${value.toFixed(value >= 100 || unit < 2 ? 0 : 1)} ${units[unit]}`
+}
+
+export function formatAge(ms: number): string {
+  const days = Math.floor((Date.now() - ms) / 86_400_000)
+  if (days < 1) return 'Changed today'
+  if (days < 60) return `Changed ${days}d ago`
+  return `Changed ${Math.floor(days / 30)}mo ago`
+}
+
 export function formatClock(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, {
     hour: '2-digit',

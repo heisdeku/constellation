@@ -46,10 +46,10 @@ function SettingsPage() {
           </button>
         </div>
 
-        <Section title="Scanning">
+        <Section title="Port scanning">
           <FieldRow
             label="Refresh interval"
-            hint="How often Port Tracker rescans while tracking is on."
+            hint="How often ports are rescanned while tracking is on."
           >
             <SelectField
               ariaLabel="Refresh interval"
@@ -120,6 +120,11 @@ function SettingsPage() {
             <p>
               Protected system processes and anything running as another user are
               never signalled.
+            </p>
+            <p>
+              <span className="text-ink-dim">Storage</span> sizes count what deleting
+              would really free. APFS clones share disk blocks, so a folder can look
+              far bigger in <Code>du</Code> than the space it gives back.
             </p>
           </div>
         </Section>

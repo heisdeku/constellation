@@ -60,14 +60,44 @@ export interface ControlResult {
   message: string
 }
 
+export type StorageSafety = 'safe' | 'review' | 'keep'
+
+export type StorageGroup = 'packages' | 'mobile' | 'apps' | 'hidden' | 'projects'
+
+export interface StorageTarget {
+  id: string
+  group: StorageGroup
+  label: string
+  detail: string
+  path: string
+  safety: StorageSafety
+  modifiedMs: number | null
+}
+
+export interface Measurement {
+  apparentBytes: number
+  reclaimableBytes: number
+  unreadable: number
+}
+
+export interface DiskUsage {
+  totalBytes: number
+  freeBytes: number
+}
+
+export interface CleanResult {
+  removed: number
+  failures: string[]
+}
+
 /** The Tauri webview injects this; a plain browser never will. */
 export const isDesktopShell = (): boolean =>
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 const NO_SHELL =
-  'Port Tracker is running as a plain web page, so it has no access to your ' +
-  'processes. Stop `pnpm dev` and run `pnpm app` instead — that launches the ' +
-  'desktop app, which is what talks to lsof and ps.'
+  'System Manager is running as a plain web page, so it has no access to your ' +
+  'Mac. Stop `pnpm dev` and run `pnpm app` instead — that launches the desktop ' +
+  'app, which is what reads your ports and disk.'
 
 /**
  * Every backend call goes through here so that running the UI outside the desktop
@@ -104,6 +134,16 @@ export const openInTerminal = (path: string) =>
 
 export const openInEditor = (path: string) =>
   call<string>('open_in_editor', { path })
+
+export const diskUsage = () => call<DiskUsage>('disk_usage')
+
+export const storageTargets = () => call<StorageTarget[]>('storage_targets')
+
+export const measureTarget = (id: string) =>
+  call<Measurement>('measure_target', { id })
+
+export const cleanTarget = (id: string) =>
+  call<CleanResult>('clean_target', { id })
 
 /** Tauri rejects with a plain string; normalise it for display. */
 export function errorMessage(e: unknown): string {
