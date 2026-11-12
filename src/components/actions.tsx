@@ -73,7 +73,7 @@ export function ActionsProvider({ children }: { children: React.ReactNode }) {
             type: 'info',
             timeout: 12000,
             actionProps: {
-              children: 'Force stop (SIGKILL)',
+              children: 'Force stop',
               onClick: () => void doStop(entry, true),
             },
           })
@@ -98,7 +98,7 @@ export function ActionsProvider({ children }: { children: React.ReactNode }) {
           const res = await api.pauseProcess(entry.pid, entry.process.name)
           toast.add({
             title: `Paused ${entry.process.name}`,
-            description: `Port ${entry.port} stays bound. Resume to pick up where it left off.`,
+            description: `It keeps port ${entry.port} until you resume it.`,
             type: 'success',
           })
           if (!res.process) void refresh()
@@ -218,8 +218,8 @@ function StopDialog({
             Stop {target?.process.name}?
           </AlertDialog.Title>
           <AlertDialog.Description className="mt-2 text-[12.5px] leading-relaxed text-ink-dim">
-            This sends SIGTERM to PID {target?.pid}, asking it to shut down and release
-            port {target?.port}. Unsaved work in that process will be lost.
+            It will be asked to quit and release port {target?.port}. Anything unsaved in
+            it is lost.
           </AlertDialog.Description>
 
           {target?.process.command && (

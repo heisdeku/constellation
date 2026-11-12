@@ -219,7 +219,7 @@ fn fixed_plans(home: &Path) -> Vec<Plan> {
         ("derived-data", Mobile, "Xcode DerivedData", "Build output and indexes. The next Xcode build starts from scratch.", "Library/Developer/Xcode/DerivedData", Safe, Contents),
         ("device-support", Mobile, "iOS device support", "Symbols copied from phones you've plugged in. Xcode copies them again.", "Library/Developer/Xcode/iOS DeviceSupport", Safe, Contents),
         ("archives", Mobile, "Xcode archives", "Builds you archived for release. Needed to symbolicate crash reports for them.", "Library/Developer/Xcode/Archives", Review, Contents),
-        ("simulators", Mobile, "Simulator devices", "Erases every simulator: installed apps and their data go. Fails if one is running.", "Library/Developer/CoreSimulator/Devices", Review, Command(&["xcrun", "simctl", "erase", "all"])),
+        ("simulators", Mobile, "Simulator devices", "Erases every simulator, with its apps and data. Fails while one is running.", "Library/Developer/CoreSimulator/Devices", Review, Command(&["xcrun", "simctl", "erase", "all"])),
         ("logs", Apps, "App logs", "Logs apps wrote for troubleshooting. Nothing depends on them.", "Library/Logs", Safe, Contents),
         ("app-support", Apps, "Application Support", "Your apps' real data: accounts, chats, projects. Clear it from inside each app.", "Library/Application Support", Keep, Nothing),
         ("trash", Hidden, "Trash", "Everything you've already moved to the Trash.", ".Trash", Review, Contents),
@@ -356,7 +356,7 @@ fn item_plan(path: &Path, home: &Path) -> Plan {
     let detail = if icloud {
         "Moving this to the Trash removes it from iCloud on all your devices."
     } else {
-        "Moves to the Trash, so you can put it back. Space returns once the Trash is emptied."
+        "Goes to the Trash."
     };
     let mut out = plan(
         format!("item:{}", path.display()),

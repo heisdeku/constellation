@@ -47,9 +47,9 @@ export const SCOPE_LABEL: Record<PortScope, string> = {
 }
 
 export const SCOPE_HINT: Record<PortScope, string> = {
-  loopback: 'Bound to localhost — only this machine can reach it.',
-  lan: 'Bound to all interfaces — anything on your network can reach it.',
-  specific: 'Bound to one specific address.',
+  loopback: 'Only this Mac can reach it.',
+  lan: 'Any device on your network can reach it.',
+  specific: 'Reachable at one specific address.',
 }
 
 export function formatUptime(seconds: number): string {

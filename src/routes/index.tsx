@@ -204,7 +204,6 @@ function PortsPage() {
               <Empty
                 icon={<Plug size={26} />}
                 title="Scanning ports…"
-                body="Reading listening sockets from lsof."
               />
             ) : error && entries.length === 0 ? (
               <Empty
@@ -220,7 +219,7 @@ function PortsPage() {
                   filtersActive
                     ? 'Try a different search, or clear the filters.'
                     : settings.hideSystem
-                      ? 'Nothing of yours is listening. System-owned ports are hidden — turn that off in Settings to see them.'
+                      ? "Nothing of yours is listening. To see other users' ports, turn off Hide other users' ports in Settings."
                       : 'Nothing on this machine is listening for connections.'
                 }
               />

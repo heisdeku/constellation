@@ -192,7 +192,7 @@ function Row({
           <Tip
             content={
               folder.missing
-                ? `${folder.path} no longer exists — this process outlived its folder.`
+                ? `${folder.path} was deleted, but this process is still running from it.`
                 : `Reveal ${folder.path} in Finder`
             }
           >
@@ -273,12 +273,12 @@ function Row({
             <Tip
               content={
                 !p.ownedByMe
-                  ? `Runs as ${p.user} — macOS won't let marè signal it`
+                  ? `Runs as ${p.user}, so marè can't control it`
                   : p.protected
                     ? 'Protected system process'
                     : p.paused
-                      ? 'Resume (SIGCONT)'
-                      : 'Pause (SIGSTOP) — freezes it, keeps the port'
+                      ? 'Resume'
+                      : 'Pause, keeping its port'
               }
             >
               <button
@@ -294,7 +294,7 @@ function Row({
               </button>
             </Tip>
 
-            <Tip content={p.protected ? 'Protected system process' : 'Stop (SIGTERM)'}>
+            <Tip content={p.protected ? 'Protected system process' : 'Stop'}>
               <button
                 type="button"
                 aria-label="Stop process"

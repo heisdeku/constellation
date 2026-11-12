@@ -65,14 +65,14 @@ const SECTIONS: ReadonlyArray<{
   /** Already inside a folder listed above it, so it isn't added to the total again. */
   nested?: boolean
 }> = [
-  { group: 'applications', category: 'applications', title: 'Apps', hint: 'Moved to the Trash, never erased.' },
+  { group: 'applications', category: 'applications', title: 'Apps', hint: 'Removed apps go to the Trash.' },
   { group: 'packages', category: 'developer', title: 'Package managers', hint: 'Downloads kept in case you need them again.' },
   { group: 'mobile', category: 'developer', title: 'Xcode and simulators', hint: 'Build output and device images.' },
   { group: 'documents', category: 'documents', title: 'Folders', hint: 'Open a folder to see what fills it.' },
   { group: 'projects', category: 'documents', title: 'Project build folders', hint: 'Dependencies and build output inside those folders.', nested: true },
   { group: 'icloud', category: 'icloud', title: 'iCloud Drive', hint: 'Deleting here deletes on all your devices.' },
-  { group: 'messages', category: 'messages', title: 'Messages', hint: 'Managed inside the Messages app.' },
-  { group: 'photos', category: 'photos', title: 'Photos', hint: 'Managed inside the Photos app.' },
+  { group: 'messages', category: 'messages', title: 'Messages', hint: 'Clear space from inside Messages.' },
+  { group: 'photos', category: 'photos', title: 'Photos', hint: 'Clear space from inside Photos.' },
   { group: 'apps', category: 'system', title: 'App caches and logs', hint: 'Most of what macOS calls System Data.' },
   { group: 'hidden', category: 'system', title: 'Hidden system files', hint: "Folders Finder and System Settings don't show." },
 ]
@@ -440,8 +440,8 @@ function Overview({
         })}
       </div>
       <p className="mt-3 text-[11.5px] leading-relaxed text-ink-faint">
-        macOS doesn't publish how it adds these up, so these totals won't match System
-        Settings exactly. Sizes show what deleting would really free.
+        These totals won't match System Settings exactly. Each size here is what deleting
+        would actually free.
       </p>
     </>
   )
@@ -576,7 +576,7 @@ function GroupSection({
   const motion = useListMotion(shown, targetKey)
 
   if (loading) {
-    return <Empty icon={<HardDrive size={24} />} title="Looking inside…" body="Measuring each item." />
+    return <Empty icon={<HardDrive size={24} />} title="Looking inside…" />
   }
   if (rows.length === 0 && targets.length > 0) {
     return (
@@ -825,10 +825,10 @@ function ConfirmClean({
           </AlertDialog.Title>
           <AlertDialog.Description className="mt-2 text-[12.5px] leading-relaxed text-ink-dim">
             {toDelete.length > 0 &&
-              "Items without a Trash tag skip the Trash, because they rebuild themselves and moving them wouldn't free any space. "}
-            {review && "Items marked Review won't rebuild on their own, so check them first. "}
+              'Items without a Trash tag are deleted, not moved to the Trash. They rebuild themselves. '}
+            {review && "Check items marked Review first. They won't rebuild on their own. "}
             {toTrash.length > 0 &&
-              'Items tagged Trash can be put back, and free their space once you empty the Trash. '}
+              'Items tagged Trash can be put back. Their space returns when you empty the Trash. '}
             {icloud && 'iCloud items are removed from all your devices.'}
           </AlertDialog.Description>
 

@@ -175,8 +175,7 @@ export function PortDetail({
             </>
           ) : (
             <p className="text-[11.5px] leading-relaxed text-ink-faint">
-              No working directory available — macOS only exposes it for processes you
-              own.
+              macOS only shows the folder for processes you own.
             </p>
           )}
         </section>

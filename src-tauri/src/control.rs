@@ -63,14 +63,14 @@ fn guard(pid: i32, expected_name: Option<&str>) -> Result<ProcessInfo, String> {
     if let Some(expected) = expected_name {
         if !expected.is_empty() && info.name != expected {
             return Err(format!(
-                "Process {pid} is now `{}`, not `{expected}` — it was replaced since the last scan. Refresh and try again.",
+                "Process {pid} is now `{}`, not `{expected}`. Rescan and try again.",
                 info.name
             ));
         }
     }
     if info.protected {
         return Err(format!(
-            "`{}` is a protected system process — marè won't signal it.",
+            "macOS needs `{}`, so marè won't stop or pause it.",
             info.name
         ));
     }
@@ -167,7 +167,7 @@ pub fn stop(
                 exited: false,
                 escalated: false,
                 message: format!(
-                    "`{name}` ignored SIGTERM after {grace_ms}ms. Use Force stop to send SIGKILL."
+                    "`{name}` didn't quit in time. Force stop it to end it now."
                 ),
                 process: proc::describe_one(pid)?,
             });
@@ -178,9 +178,9 @@ pub fn stop(
             exited,
             escalated: true,
             message: if exited {
-                format!("Force stopped `{name}` with SIGKILL.")
+                format!("Force stopped `{name}`.")
             } else {
-                format!("`{name}` survived SIGKILL — it may be stuck in the kernel.")
+                format!("`{name}` is still running after Force stop. Restarting your Mac will end it.")
             },
             process: proc::describe_one(pid)?,
         });
