@@ -201,6 +201,16 @@
   mix-blend-mode: lighten;
 }
 
+/* The ports table takes its new width at once; cross-fading the wide and narrow
+   layouts doubled every label. The sliding panel covers the change. */
+::view-transition-group(ports-main),
+::view-transition-new(ports-main) {
+  animation: none;
+}
+::view-transition-old(ports-main) {
+  display: none;
+}
+
 /* The port panel slides in from the table's edge, and back out when closed. */
 @keyframes panel-in {
   from {

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { AlertTriangle, Pause, Play, Plug, RefreshCw, Search, SearchX, X } from 'lucide-react'
 import { ActionsProvider } from '~/components/actions'
@@ -42,11 +43,21 @@ function PortsPage() {
   const setSearch = (patch: Partial<PortsSearch>, viewTransition = false) =>
     navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, viewTransition })
 
-  const select = (sel: string | null) => void setSearch({ sel: sel ?? undefined }, true)
+  // The one row whose port and name move into the panel, or back out of it. Naming
+  // every row made all of them slide when the table narrowed for the panel.
+  const [movingRow, setMovingRow] = useState<string | null>(null)
+  // Committed before the transition captures the page, so the row has its name in time.
+  const markMoving = (id: string | null) => flushSync(() => setMovingRow(id))
+
+  const select = (sel: string | null) => {
+    markMoving(sel ?? search.sel ?? null)
+    void setSearch({ sel: sel ?? undefined }, true)
+  }
 
   // Focus goes back to the row that opened the panel, so the keyboard picks up there.
   const closeDetail = async () => {
     const id = search.sel
+    markMoving(id ?? null)
     await setSearch({ sel: undefined }, true)
     if (id) document.querySelector<HTMLElement>(`[data-motion-key="${CSS.escape(id)}"]`)?.focus()
   }
@@ -93,7 +104,11 @@ function PortsPage() {
   return (
     <ActionsProvider>
       <div className="flex h-full">
-        <div className="flex min-w-0 flex-1 flex-col">
+        {/* Switches to its new width at once rather than cross-fading two layouts. */}
+        <div
+          className="flex min-w-0 flex-1 flex-col"
+          style={{ viewTransitionName: 'ports-main' }}
+        >
           <PageHeader
             title="Ports"
             subtitle={
@@ -227,6 +242,7 @@ function PortsPage() {
               <PortsTable
                 entries={visible}
                 selectedId={search.sel ?? null}
+                movingId={movingRow}
                 onSelect={select}
                 sort={search.sort}
                 dir={search.dir}

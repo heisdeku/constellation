@@ -32,6 +32,7 @@ const WIDE_ONLY = 'hidden @3xl:block'
 export function PortsTable({
   entries,
   selectedId,
+  movingId,
   onSelect,
   sort,
   dir,
@@ -39,6 +40,8 @@ export function PortsTable({
 }: {
   entries: PortEntry[]
   selectedId: string | null
+  /** The row moving into or out of the detail panel; only it carries shared names. */
+  movingId: string | null
   onSelect: (id: string | null) => void
   sort: SortKey
   dir: SortDir
@@ -70,6 +73,7 @@ export function PortsTable({
             key={entry.id}
             entry={entry}
             selected={entry.id === selectedId}
+            moving={entry.id === movingId}
             leaving={leaving}
             onSelect={onSelect}
           />
@@ -115,11 +119,13 @@ function SortHeader({
 function Row({
   entry,
   selected,
+  moving,
   leaving,
   onSelect,
 }: {
   entry: PortEntry
   selected: boolean
+  moving: boolean
   leaving: boolean
   onSelect: (id: string | null) => void
 }) {
@@ -131,7 +137,7 @@ function Row({
   const service = wellKnownName(entry.port)
   const label = entry.docker?.name ?? p.name
   // While a row's panel is open, the panel carries these names instead.
-  const shared = !selected && !leaving
+  const shared = moving && !selected && !leaving
 
   return (
     <div
