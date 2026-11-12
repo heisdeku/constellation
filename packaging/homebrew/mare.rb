@@ -2,10 +2,10 @@ cask "mare" do
   version "__VERSION__"
   sha256 "__SHA256__"
 
-  url "https://github.com/heisdeku/constellation/releases/download/v#{version}/mare-#{version}-macos-universal.zip"
+  url "https://github.com/heisdeku/mare/releases/download/v#{version}/mare-#{version}-macos-universal.zip"
   name "marè"
   desc "See what is using your ports and disk, and clear space safely"
-  homepage "https://github.com/heisdeku/constellation"
+  homepage "https://github.com/heisdeku/mare"
 
   depends_on :macos
 

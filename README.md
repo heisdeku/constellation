@@ -30,7 +30,7 @@ marè runs on macOS 10.15 or later, on Apple Silicon and Intel.
 ### With the install script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/heisdeku/constellation/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/heisdeku/mare/main/scripts/install.sh | bash
 ```
 
 The script downloads the latest release, checks its SHA-256 checksum against the one
@@ -39,11 +39,11 @@ published with it, and installs the app to `/Applications`. Run it again to upda
 To install a specific version, or to remove the app:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/heisdeku/constellation/main/scripts/install.sh | bash -s -- --version 0.1.0
+curl -fsSL https://raw.githubusercontent.com/heisdeku/mare/main/scripts/install.sh | bash -s -- --version 0.1.0
 ```
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/heisdeku/constellation/main/scripts/install.sh | bash -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/heisdeku/mare/main/scripts/install.sh | bash -s -- --uninstall
 ```
 
 ### With Homebrew
@@ -64,7 +64,7 @@ Homebrew asks you to trust a tap before it installs from one that isn't official
 
 ### From the disk image
 
-Download the `.dmg` from the [latest release](https://github.com/heisdeku/constellation/releases/latest)
+Download the `.dmg` from the [latest release](https://github.com/heisdeku/mare/releases/latest)
 and drag marè into Applications.
 
 marè isn't notarised by Apple yet, so the first time you open a copy

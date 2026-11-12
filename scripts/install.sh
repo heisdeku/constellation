@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installs or updates marè from the latest GitHub release.
 #
-#   curl -fsSL https://raw.githubusercontent.com/heisdeku/constellation/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/heisdeku/mare/main/scripts/install.sh | bash
 #
 # Options:
 #   --version <x.y.z>  install a specific release instead of the latest
@@ -13,7 +13,7 @@
 #   MARE_RELEASE_URL  download from a mirror; must hold the zip and checksums.txt
 set -euo pipefail
 
-repo="heisdeku/constellation"
+repo="heisdeku/mare"
 app="marè.app"
 bundle_id="dev.oluwaferanmi.mare"
 
