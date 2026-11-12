@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs or updates System Manager from the latest GitHub release.
+# Installs or updates marè from the latest GitHub release.
 #
 #   curl -fsSL https://raw.githubusercontent.com/heisdeku/constellation/main/scripts/install.sh | bash
 #
@@ -9,13 +9,13 @@
 #   --uninstall        remove the app
 #
 # Environment:
-#   SYSTEM_MANAGER_DIR          install somewhere other than /Applications
-#   SYSTEM_MANAGER_RELEASE_URL  download from a mirror; must hold the zip and checksums.txt
+#   MARE_DIR          install somewhere other than /Applications
+#   MARE_RELEASE_URL  download from a mirror; must hold the zip and checksums.txt
 set -euo pipefail
 
 repo="heisdeku/constellation"
-app="System Manager.app"
-bundle_id="dev.oluwaferanmi.port-tracker"
+app="marè.app"
+bundle_id="dev.oluwaferanmi.mare"
 
 version=""
 open_after=1
@@ -31,10 +31,10 @@ done
 
 fail() { echo "error: $*" >&2; exit 1; }
 
-[ "$(uname -s)" = "Darwin" ] || fail "System Manager only runs on macOS."
+[ "$(uname -s)" = "Darwin" ] || fail "marè only runs on macOS."
 
-if [ -n "${SYSTEM_MANAGER_DIR:-}" ]; then
-  dir="$SYSTEM_MANAGER_DIR"
+if [ -n "${MARE_DIR:-}" ]; then
+  dir="$MARE_DIR"
 elif [ -w /Applications ]; then
   dir="/Applications"
 else
@@ -48,11 +48,11 @@ quit_running() {
     pgrep -f "$target/Contents/MacOS/" >/dev/null || return 0
     sleep 0.25
   done
-  fail "System Manager is still running. Quit it and try again."
+  fail "marè is still running. Quit it and try again."
 }
 
 if [ "$uninstall" = 1 ]; then
-  [ -d "$target" ] || fail "System Manager isn't installed in $dir."
+  [ -d "$target" ] || fail "marè isn't installed in $dir."
   quit_running
   rm -rf "$target"
   echo "Removed $target. Your settings stay in ~/Library in case you reinstall."
@@ -65,13 +65,13 @@ if [ -z "$version" ]; then
   [ -n "$version" ] || fail "Couldn't find the latest release of $repo."
 fi
 
-name="System-Manager-$version-macos-universal.zip"
-base="${SYSTEM_MANAGER_RELEASE_URL:-https://github.com/$repo/releases/download/v$version}"
+name="mare-$version-macos-universal.zip"
+base="${MARE_RELEASE_URL:-https://github.com/$repo/releases/download/v$version}"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-echo "Downloading System Manager $version..."
+echo "Downloading marè $version..."
 curl -fL --progress-bar -o "$tmp/$name" "$base/$name" || fail "Download failed: $base/$name"
 curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt" || fail "Couldn't download checksums.txt."
 
@@ -91,6 +91,6 @@ mv "$tmp/unpacked/$app" "$target"
 # The app isn't notarised. Without this, macOS refuses to open it the first time.
 xattr -dr com.apple.quarantine "$target" 2>/dev/null || true
 
-echo "Installed System Manager $version to $target"
+echo "Installed marè $version to $target"
 [ "$open_after" = 1 ] && open "$target"
 exit 0

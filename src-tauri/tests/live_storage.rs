@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use system_manager_lib::storage::{self, Measurement, Target};
+use mare_lib::storage::{self, Measurement, Target};
 
 #[test]
 #[ignore = "walks the whole home folder"]

@@ -48,4 +48,4 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist-release/* --title "System Manager $VERSION" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" dist-release/* --title "marè $VERSION" --generate-notes

@@ -106,63 +106,45 @@ export interface CleanResult {
   failures: string[]
 }
 
-/** The Tauri webview injects this; a plain browser never will. */
-export const isDesktopShell = (): boolean =>
-  typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-
-const NO_SHELL =
-  'System Manager is running as a plain web page, so it has no access to your ' +
-  'Mac. Stop `pnpm dev` and run `pnpm app` instead — that launches the desktop ' +
-  'app, which is what reads your ports and disk.'
-
-/**
- * Every backend call goes through here so that running the UI outside the desktop
- * shell reports what's wrong instead of throwing `undefined is not an object`.
- */
-function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isDesktopShell()) return Promise.reject(new Error(NO_SHELL))
-  return invoke<T>(cmd, args)
-}
-
 export const scanPorts = (includeUdp: boolean) =>
-  call<ScanResult>('scan_ports', { includeUdp })
+  invoke<ScanResult>('scan_ports', { includeUdp })
 
 export const pauseProcess = (pid: number, expectedName: string) =>
-  call<ControlResult>('pause_process', { pid, expectedName })
+  invoke<ControlResult>('pause_process', { pid, expectedName })
 
 export const resumeProcess = (pid: number, expectedName: string) =>
-  call<ControlResult>('resume_process', { pid, expectedName })
+  invoke<ControlResult>('resume_process', { pid, expectedName })
 
 export const stopProcess = (
   pid: number,
   expectedName: string,
   force: boolean,
   graceMs: number,
-) => call<ControlResult>('stop_process', { pid, expectedName, force, graceMs })
+) => invoke<ControlResult>('stop_process', { pid, expectedName, force, graceMs })
 
 export const revealInFinder = (path: string) =>
-  call<void>('reveal_in_finder', { path })
+  invoke<void>('reveal_in_finder', { path })
 
-export const openPath = (path: string) => call<void>('open_path', { path })
+export const openPath = (path: string) => invoke<void>('open_path', { path })
 
 export const openInTerminal = (path: string) =>
-  call<void>('open_in_terminal', { path })
+  invoke<void>('open_in_terminal', { path })
 
 export const openInEditor = (path: string) =>
-  call<string>('open_in_editor', { path })
+  invoke<string>('open_in_editor', { path })
 
-export const diskUsage = () => call<DiskUsage>('disk_usage')
+export const diskUsage = () => invoke<DiskUsage>('disk_usage')
 
-export const storageTargets = () => call<StorageTarget[]>('storage_targets')
+export const storageTargets = () => invoke<StorageTarget[]>('storage_targets')
 
 export const storageChildren = (path: string) =>
-  call<StorageTarget[]>('storage_children', { path })
+  invoke<StorageTarget[]>('storage_children', { path })
 
 export const measureTarget = (id: string) =>
-  call<Measurement>('measure_target', { id })
+  invoke<Measurement>('measure_target', { id })
 
 export const cleanTarget = (id: string) =>
-  call<CleanResult>('clean_target', { id })
+  invoke<CleanResult>('clean_target', { id })
 
 /** Tauri rejects with a plain string; normalise it for display. */
 export function errorMessage(e: unknown): string {

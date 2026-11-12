@@ -54,7 +54,7 @@ fn guard(pid: i32, expected_name: Option<&str>) -> Result<ProcessInfo, String> {
         return Err("Refusing to signal pid 1 or lower.".to_string());
     }
     if pid == std::process::id() as i32 {
-        return Err("That's System Manager itself.".to_string());
+        return Err("That's marè itself.".to_string());
     }
 
     let info = proc::describe_one(pid)?
@@ -70,13 +70,13 @@ fn guard(pid: i32, expected_name: Option<&str>) -> Result<ProcessInfo, String> {
     }
     if info.protected {
         return Err(format!(
-            "`{}` is a protected system process — System Manager won't signal it.",
+            "`{}` is a protected system process — marè won't signal it.",
             info.name
         ));
     }
     if !info.owned_by_me {
         return Err(format!(
-            "`{}` runs as `{}`, not you. macOS won't let System Manager signal it.",
+            "`{}` runs as `{}`, not you. macOS won't let marè signal it.",
             info.name, info.user
         ));
     }

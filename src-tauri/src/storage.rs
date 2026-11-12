@@ -32,7 +32,7 @@ const PS_TIMEOUT: Duration = Duration::from_secs(4);
 const SYSTEM_VOLUMES: &[&str] = &["/", "/System/Volumes/Preboot"];
 const APPLICATIONS: &str = "/Applications";
 /// Never trash the app doing the trashing.
-const OWN_BUNDLE: &str = "System Manager.app";
+const OWN_BUNDLE: &str = "marè.app";
 /// Package-style libraries: their insides belong to the owning app, and removing a
 /// file from one corrupts it. Git history is lost the same way.
 const OPAQUE_SUFFIXES: &[&str] = &[".photoslibrary", ".musiclibrary", ".tvlibrary", ".git"];
@@ -857,7 +857,7 @@ fn move_to_trash(path: &str) -> Result<(), String> {
     if sh::run_ok("osascript", &script, FINDER_TIMEOUT)? {
         return Ok(());
     }
-    Err("Finder couldn't move it to the Trash. Allow System Manager to control Finder in \
+    Err("Finder couldn't move it to the Trash. Allow marè to control Finder in \
          System Settings › Privacy & Security › Automation, or check you own the item."
         .to_string())
 }
@@ -975,7 +975,7 @@ mod tests {
 
     impl Sandbox {
         fn new(name: &str) -> Self {
-            let unique = format!("system-manager-{name}-{}", std::process::id());
+            let unique = format!("mare-{name}-{}", std::process::id());
             let dir = std::env::temp_dir().join(unique);
             let _ = fs::remove_dir_all(&dir);
             fs::create_dir_all(&dir).unwrap();
@@ -1219,7 +1219,7 @@ mod tests {
     fn apps_must_be_real_bundles_in_an_applications_folder() {
         let home = Sandbox::new("apps");
         home.write("Applications/Tool.app/Contents/Info.plist", 16);
-        home.write("Applications/System Manager.app/Contents/Info.plist", 16);
+        home.write("Applications/marè.app/Contents/Info.plist", 16);
         home.write("Documents/Tool.app/Contents/Info.plist", 16);
         std::os::unix::fs::symlink(
             home.0.join("Applications/Tool.app"),
@@ -1233,7 +1233,7 @@ mod tests {
         assert_eq!(tool.disposal, Disposal::Trash);
 
         for path in [
-            "Applications/System Manager.app",
+            "Applications/marè.app",
             "Applications/Link.app",
             "Documents/Tool.app",
             "Applications/Tool.app/Contents",

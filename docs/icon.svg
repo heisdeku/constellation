@@ -1,40 +1,39 @@
 <!--
-  Source artwork for the app icon.
+  Source artwork for the marè app icon: a crescent moon. A circle with an offset
+  circle cut out of it (the mask) keeps the edges exact at every size. The same shape
+  is the sidebar logo in src/components/Logo.tsx.
 
-  macOS geometry: an 824x824 squircle centred in a 1024x1024 canvas, leaving a
-  100px transparent margin so it sits correctly beside other Dock icons.
+  macOS geometry: an 824x824 squircle centred in a 1024x1024 canvas, leaving a 100px
+  transparent margin so it sits correctly beside other Dock icons.
 
-  Render it with a rasteriser that preserves alpha — `qlmanage` does NOT, it
-  composites onto a white matte:
-
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-      --headless --disable-gpu --force-device-scale-factor=1 \
-      --default-background-color=00000000 --window-size=1024,1024 \
-      --screenshot=icon.png file://$PWD/docs/icon.svg
-
-  Then regenerate every size with: pnpm tauri icon icon.png
+  How to turn this into the app icons is in docs/development.md, under "App icon".
 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="body" x1="0" y1="0" x2="0.35" y2="1">
-      <stop offset="0" stop-color="#222b3a"/>
-      <stop offset="1" stop-color="#0b0e13"/>
+    <linearGradient id="body" x1="0.2" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#2a2a2e"/>
+      <stop offset="1" stop-color="#121214"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0.15" y1="0.9" x2="0.9" y2="0.1">
-      <stop offset="0" stop-color="#5eead4"/>
-      <stop offset="1" stop-color="#34d399"/>
+    <linearGradient id="moon" x1="0.15" y1="0.1" x2="0.85" y2="0.95">
+      <stop offset="0" stop-color="#fbf7ee"/>
+      <stop offset="0.55" stop-color="#e3dfd6"/>
+      <stop offset="1" stop-color="#a9b2c4"/>
     </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f3efe4" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#f3efe4" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="crescent">
+      <rect width="1024" height="1024" fill="black"/>
+      <circle cx="500" cy="524" r="252" fill="white"/>
+      <circle cx="610" cy="430" r="222" fill="black"/>
+    </mask>
   </defs>
 
   <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#body)"/>
+  <rect x="100.5" y="100.5" width="823" height="823" rx="184.5" fill="none"
+        stroke="#ffffff" stroke-opacity="0.06"/>
 
-  <!-- A port, listening: signal arcs radiating from a bound socket. -->
-  <g transform="translate(336 688)">
-    <circle cx="0" cy="0" r="45" fill="url(#accent)"/>
-    <g fill="none" stroke="url(#accent)" stroke-width="47" stroke-linecap="round">
-      <path d="M0 -158 A158 158 0 0 1 158 0" opacity="0.95"/>
-      <path d="M0 -266 A266 266 0 0 1 266 0" opacity="0.62"/>
-      <path d="M0 -374 A374 374 0 0 1 374 0" opacity="0.32"/>
-    </g>
-  </g>
+  <circle cx="500" cy="524" r="330" fill="url(#glow)"/>
+  <rect width="1024" height="1024" fill="url(#moon)" mask="url(#crescent)"/>
 </svg>

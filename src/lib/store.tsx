@@ -31,7 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   graceMs: 3000,
 }
 
-const STORAGE_KEY = 'port-tracker.settings.v1'
+const STORAGE_KEY = 'mare.settings.v1'
 
 function loadSettings(): Settings {
   try {

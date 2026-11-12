@@ -129,5 +129,5 @@ pub fn run() {
             clean_target,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running System Manager");
+        .expect("error while running marè");
 }
