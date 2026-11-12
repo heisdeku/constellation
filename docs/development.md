@@ -23,6 +23,24 @@ pnpm dev
 from Vite with hot reload. The UI only runs inside the app; `pnpm ui:dev` starts the
 Vite server on its own, which Tauri does for you.
 
+## Dev and production builds
+
+Local builds run as **marè (Dev)**, a separate app from the marè you install:
+
+| | Dev | Production |
+| --- | --- | --- |
+| Name | marè (Dev) | marè |
+| Bundle ID | `dev.oluwaferanmi.mare-dev` | `dev.oluwaferanmi.mare` |
+| Run | `pnpm dev` | |
+| Build | `pnpm build:dev` | `pnpm build` |
+
+Both can run at once. Each has its own settings and its own entry in System Settings ›
+Privacy & Security › Full Disk Access, so granting access to one doesn't grant it to the
+other. The dev build shows a Dev label beside the logo.
+
+The dev values live in `src-tauri/tauri.dev.conf.json`, which Tauri merges over
+`tauri.conf.json`. `pnpm build:dev` writes only `marè (Dev).app`, with no disk image.
+
 ## Build an app bundle
 
 ```bash
@@ -47,7 +65,8 @@ Developer ID and notarisation.
 
 1. Set the new version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and
    `package.json`.
-2. Commit, then tag and push:
+2. Merge that change into `main` through a pull request, since `main` doesn't accept
+   direct pushes. Then tag `main` and push the tag:
 
    ```bash
    git tag v0.2.0

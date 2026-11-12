@@ -7,8 +7,9 @@
   "packageManager": "pnpm@11.8.0",
   "description": "See what is using your Mac's ports and disk, and clear space safely.",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "build": "tauri build",
+    "build:dev": "tauri build --config src-tauri/tauri.dev.conf.json --bundles app",
     "tauri": "tauri",
     "ui:dev": "vite",
     "ui:build": "vite build && tsc --noEmit",
