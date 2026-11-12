@@ -4,19 +4,11 @@ import { AlertDialog } from '@base-ui-components/react/alert-dialog'
 import { Checkbox } from '@base-ui-components/react/checkbox'
 import {
   AlertTriangle,
-  AppWindow,
   Check,
   ChevronLeft,
   ChevronRight,
-  Cloud,
-  Ellipsis,
-  FileText,
   FolderSearch,
-  Hammer,
   HardDrive,
-  Image,
-  Laptop,
-  MessageCircle,
   RefreshCw,
 } from 'lucide-react'
 import { useToast } from '~/components/Toaster'
@@ -33,22 +25,9 @@ import {
 } from '~/lib/api'
 import { basename, formatAge, formatBytes, tildify } from '~/lib/format'
 import { useApp } from '~/lib/store'
+import { CATEGORIES, type CategoryId } from '~/lib/categories'
 import { transitionName, useListMotion } from '~/lib/motion'
 import { useStorage } from '~/lib/storage'
-
-/** The same list, in the same order, as System Settings › General › Storage. */
-const CATEGORIES = [
-  { id: 'applications', label: 'Applications', icon: AppWindow, bar: 'bg-info' },
-  { id: 'developer', label: 'Developer', icon: Hammer, bar: 'bg-violet' },
-  { id: 'documents', label: 'Documents', icon: FileText, bar: 'bg-live' },
-  { id: 'icloud', label: 'iCloud Drive', icon: Cloud, bar: 'bg-held' },
-  { id: 'messages', label: 'Messages', icon: MessageCircle, bar: 'bg-danger' },
-  { id: 'photos', label: 'Photos', icon: Image, bar: 'bg-danger/60' },
-  { id: 'macos', label: 'macOS', icon: Laptop, bar: 'bg-ink-faint' },
-  { id: 'system', label: 'System Data', icon: Ellipsis, bar: 'bg-ink-faint/60' },
-] as const
-
-type CategoryId = (typeof CATEGORIES)[number]['id']
 
 interface StorageSearch {
   category?: CategoryId
@@ -216,7 +195,7 @@ function StoragePage() {
   return (
     <div className="flex h-full flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[860px] px-6 py-6">
+        <div className="mx-auto max-w-[880px] px-6 pb-8 pt-5">
           {error && (
             <div className="mb-4 flex items-start gap-2 rounded-md border border-danger/25 bg-danger/10 px-3 py-2 text-[12px] text-danger">
               <AlertTriangle size={13} className="mt-px shrink-0" />
@@ -227,7 +206,7 @@ function StoragePage() {
           {unreadable > 0 && !scanning && (
             <p className="mb-4 rounded-md border border-held/20 bg-held/10 px-3 py-2 text-[11.5px] leading-relaxed text-held">
               macOS kept {unreadable.toLocaleString()} items private, so some sizes are
-              low. Give System Manager Full Disk Access in System Settings › Privacy &amp;
+              low. Give marè Full Disk Access in System Settings › Privacy &amp;
               Security to see them.
             </p>
           )}
@@ -259,7 +238,7 @@ function StoragePage() {
         </div>
       </div>
 
-      <footer className="flex h-12 shrink-0 items-center gap-3 border-t border-line bg-surface px-4">
+      <footer className="flex h-12 shrink-0 items-center gap-3 border-t border-line px-6">
         <span className="text-[11.5px] text-ink-faint">
           {scanning
             ? `Measuring ${measuredCount} of ${targets.length}…`
@@ -276,7 +255,7 @@ function StoragePage() {
           </button>
           <button
             type="button"
-            className="btn btn-accent"
+            className="btn btn-primary"
             disabled={chosen.length === 0 || cleaning || scanning}
             onClick={(e) => {
               const box = e.currentTarget.getBoundingClientRect()
@@ -376,7 +355,7 @@ function Overview({
       <section className="mb-6">
         <div className="mb-3 flex items-end justify-between gap-4">
           <div>
-            <h1 className="text-[17px] font-semibold tracking-tight text-ink">Storage</h1>
+            <h1 className="text-[20px] font-semibold tracking-tight text-ink">Storage</h1>
             <p className="mt-0.5 text-[12px] text-ink-faint">
               {disk
                 ? `${formatBytes(disk.freeBytes)} free of ${formatBytes(disk.totalBytes)}`
@@ -421,7 +400,7 @@ function Overview({
           const Icon = c.icon
           const content = (
             <>
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-surface-3 text-ink-dim">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-2 text-ink-dim">
                 <Icon size={14} />
               </span>
               <span
@@ -440,7 +419,7 @@ function Overview({
           )
           if (c.id === 'macos') {
             return (
-              <div key={c.id} className="flex items-center gap-3 px-4 py-2.5 pr-[41px]">
+              <div key={c.id} className="flex items-center gap-3 px-4 py-3 pr-[41px]">
                 {content}
               </div>
             )
@@ -451,7 +430,7 @@ function Overview({
               to="/storage"
               search={{ category: c.id }}
               viewTransition
-              className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2"
+              className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2"
             >
               {content}
               <ChevronRight size={13} className="shrink-0 text-ink-faint" />
@@ -523,7 +502,7 @@ function CategoryView({
           <h1
             ref={title}
             tabIndex={-1}
-            className="min-w-0 truncate text-[17px] font-semibold tracking-tight text-ink outline-none"
+            className="min-w-0 truncate text-[20px] font-semibold tracking-tight text-ink outline-none"
             style={{ viewTransitionName: path ? folderName(path) : categoryLabel(category) }}
           >
             {path ? basename(path) : info?.label}

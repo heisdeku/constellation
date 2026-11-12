@@ -23,8 +23,11 @@ import type { SortDir, SortKey } from '~/lib/filter'
 
 const entryKey = (entry: PortEntry) => entry.id
 
+// PID and CPU drop out when the table is narrow, say beside the detail panel, which
+// shows both anyway.
 const GRID =
-  'grid grid-cols-[86px_minmax(0,1.5fr)_minmax(0,1.35fr)_104px_66px_60px_96px] items-center gap-3 px-4'
+  'grid grid-cols-[72px_minmax(0,1.5fr)_minmax(0,1.2fr)_88px_96px] @3xl:grid-cols-[86px_minmax(0,1.5fr)_minmax(0,1.35fr)_104px_66px_60px_96px] items-center gap-3 px-6'
+const WIDE_ONLY = 'hidden @3xl:block'
 
 export function PortsTable({
   entries,
@@ -45,7 +48,7 @@ export function PortsTable({
   const motion = useListMotion(entries, entryKey)
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="@container flex h-full flex-col">
       <div
         className={cx(
           GRID,
@@ -56,8 +59,8 @@ export function PortsTable({
         <SortHeader label="Process" k="process" sort={sort} dir={dir} onSort={onSort} />
         <SortHeader label="Folder" k="project" sort={sort} dir={dir} onSort={onSort} />
         <span>Reach</span>
-        <SortHeader label="PID" k="pid" sort={sort} dir={dir} onSort={onSort} />
-        <SortHeader label="CPU" k="cpu" sort={sort} dir={dir} onSort={onSort} />
+        <SortHeader label="PID" k="pid" sort={sort} dir={dir} onSort={onSort} className={WIDE_ONLY} />
+        <SortHeader label="CPU" k="cpu" sort={sort} dir={dir} onSort={onSort} className={WIDE_ONLY} />
         <span className="text-right">Actions</span>
       </div>
 
@@ -82,8 +85,10 @@ function SortHeader({
   sort,
   dir,
   onSort,
+  className,
 }: {
   label: string
+  className?: string
   k: SortKey
   sort: SortKey
   dir: SortDir
@@ -97,6 +102,7 @@ function SortHeader({
       className={cx(
         'flex items-center gap-1 text-left uppercase tracking-wider transition-colors hover:text-ink-dim',
         active && 'text-ink-dim',
+        className,
       )}
     >
       {label}
@@ -181,7 +187,7 @@ function Row({
       </div>
 
       {/* Folder */}
-      <div className="min-w-0">
+      <div className="min-w-0 overflow-hidden">
         {folder ? (
           <Tip
             content={
@@ -218,7 +224,7 @@ function Row({
                 >
                   {folder.label}
                 </span>
-                {folder.missing && <Chip tone="held">Deleted</Chip>}
+                {folder.missing && <Chip tone="held" className="shrink-0">Deleted</Chip>}
               </span>
               <span className="w-full truncate pl-[18px] text-[10.5px] text-ink-faint">
                 {tildify(folder.path, home)}
@@ -241,10 +247,13 @@ function Row({
         )}
       </div>
 
-      <span className="font-mono text-[11.5px] tabular-nums text-ink-faint">{entry.pid}</span>
+      <span className={cx(WIDE_ONLY, 'font-mono text-[11.5px] tabular-nums text-ink-faint')}>
+        {entry.pid}
+      </span>
 
       <span
         className={cx(
+          WIDE_ONLY,
           'font-mono text-[11.5px] tabular-nums',
           p.cpu >= 50 ? 'text-danger' : p.cpu >= 10 ? 'text-held' : 'text-ink-faint',
         )}
@@ -264,7 +273,7 @@ function Row({
             <Tip
               content={
                 !p.ownedByMe
-                  ? `Runs as ${p.user} — macOS won't let System Manager signal it`
+                  ? `Runs as ${p.user} — macOS won't let marè signal it`
                   : p.protected
                     ? 'Protected system process'
                     : p.paused

@@ -1,28 +1,44 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, Outlet, createRootRoute, useLocation } from '@tanstack/react-router'
 import { Toast } from '@base-ui-components/react/toast'
 import { Tooltip } from '@base-ui-components/react/tooltip'
-import { Pause, Play, RefreshCw } from 'lucide-react'
-import { AppProvider, useApp } from '~/lib/store'
-import { StorageProvider } from '~/lib/storage'
+import { HardDrive, Plug, Search, Settings } from 'lucide-react'
+import { CommandPalette } from '~/components/CommandPalette'
+import { Logo } from '~/components/Logo'
 import { ToastViewport } from '~/components/Toaster'
-import { Tip, cx } from '~/components/ui'
-import { formatClock } from '~/lib/format'
+import { Tip } from '~/components/ui'
+import { formatBytes } from '~/lib/format'
+import { AppProvider } from '~/lib/store'
+import { StorageProvider, useStorage } from '~/lib/storage'
 
 export const Route = createRootRoute({ component: RootLayout })
 
 function RootLayout() {
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setPaletteOpen((open) => !open)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   return (
     <Tooltip.Provider delay={450}>
       <Toast.Provider limit={4}>
         <AppProvider>
           <StorageProvider>
-            <div className="flex h-full flex-col bg-canvas">
-              <TitleBar />
-              <main className="min-h-0 flex-1">
+            <div className="flex h-full bg-canvas">
+              <Sidebar onSearch={() => setPaletteOpen(true)} />
+              <main className="my-2 mr-2 min-w-0 flex-1 overflow-hidden rounded-xl border border-line bg-surface">
                 <Outlet />
               </main>
             </div>
+            <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
             <ToastViewport />
           </StorageProvider>
         </AppProvider>
@@ -32,107 +48,103 @@ function RootLayout() {
 }
 
 const NAV = [
-  { to: '/', label: 'Ports' },
-  { to: '/storage', label: 'Storage' },
-  { to: '/settings', label: 'Settings' },
+  { to: '/', label: 'Ports', icon: Plug },
+  { to: '/storage', label: 'Storage', icon: HardDrive },
 ] as const
 
-function TitleBar() {
+function Sidebar({ onSearch }: { onSearch: () => void }) {
   const { pathname } = useLocation()
   const nav = useRef<HTMLElement>(null)
-  // One highlight that travels between tabs; it only animates once it has a place.
-  const [indicator, setIndicator] = useState<{ x: number; width: number; moved: boolean } | null>(
+  // One highlight that travels between pages; it only animates once it has a place.
+  const [indicator, setIndicator] = useState<{ y: number; height: number; moved: boolean } | null>(
     null,
   )
 
   useLayoutEffect(() => {
-    const active = nav.current?.querySelector<HTMLElement>('[data-status="active"]')
-    if (!active) return
-    setIndicator((prev) => ({
-      x: active.offsetLeft,
-      width: active.offsetWidth,
-      moved: prev !== null,
-    }))
+    const container = nav.current
+    const active = container?.querySelector<HTMLElement>('[data-status="active"]')
+    if (!container || !active) return
+    const top = active.getBoundingClientRect().top - container.getBoundingClientRect().top
+    setIndicator((prev) => ({ y: top, height: active.offsetHeight, moved: prev !== null }))
   }, [pathname])
 
-  return (
-    <header className="drag-region flex h-[42px] shrink-0 items-center gap-3 border-b border-line bg-surface pl-[80px] pr-3">
-      <span className="text-[12.5px] font-semibold tracking-tight text-ink">
-        System Manager
-      </span>
+  const link = (to: string, label: string, Icon: typeof Plug) => (
+    <Link
+      key={to}
+      to={to}
+      className="relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-ink-dim transition-colors hover:text-ink"
+      activeProps={{ className: '!text-ink' }}
+      activeOptions={{ exact: to === '/', includeSearch: false }}
+    >
+      <Icon size={15} className="shrink-0" />
+      {label}
+    </Link>
+  )
 
-      <nav
-        ref={nav}
-        className="no-drag relative flex items-center gap-0.5 rounded-lg bg-surface-2 p-0.5"
-      >
+  return (
+    <aside className="flex w-[216px] shrink-0 flex-col px-3 pb-3">
+      {/* The window's traffic lights sit here; the strip drags the window. */}
+      <div className="drag-region h-11 shrink-0" />
+
+      <div className="mb-4 flex items-center gap-2 px-1.5">
+        <Logo />
+        <span className="text-[14px] font-semibold tracking-tight text-ink">marè</span>
+        <Tip content="Search  ⌘K" side="bottom">
+          <button
+            type="button"
+            onClick={onSearch}
+            aria-label="Search"
+            aria-keyshortcuts="Meta+K"
+            className="btn btn-ghost ml-auto px-1.5"
+          >
+            <Search size={14} />
+          </button>
+        </Tip>
+      </div>
+
+      <nav ref={nav} className="relative flex min-h-0 flex-1 flex-col">
         {indicator && (
           <span
             aria-hidden
-            className="absolute left-0 top-0.5 bottom-0.5 rounded-md bg-surface-3 motion-safe:data-[moved]:transition-[translate,width] motion-safe:data-[moved]:duration-300 motion-safe:data-[moved]:ease-[var(--ease-continuous)]"
+            className="absolute inset-x-0 top-0 rounded-lg bg-surface-2 motion-safe:data-[moved]:transition-[translate,height] motion-safe:data-[moved]:duration-300 motion-safe:data-[moved]:ease-[var(--ease-continuous)]"
             data-moved={indicator.moved || undefined}
-            style={{ translate: `${indicator.x}px 0`, width: indicator.width }}
+            style={{ translate: `0 ${indicator.y}px`, height: indicator.height }}
           />
         )}
-        {NAV.map((item) => (
-          <Link
-            key={item.to}
-            to={item.to}
-            className="relative rounded-md px-2.5 py-1 text-[12px] font-medium text-ink-faint transition-colors hover:text-ink-dim"
-            activeProps={{ className: '!text-ink' }}
-            activeOptions={{ exact: item.to === '/', includeSearch: false }}
-          >
-            {item.label}
-          </Link>
-        ))}
+        <div className="flex flex-col gap-0.5">
+          {NAV.map((item) => link(item.to, item.label, item.icon))}
+        </div>
+        <div className="mt-auto flex flex-col gap-3">
+          {link('/settings', 'Settings', Settings)}
+          <DiskMeter />
+        </div>
       </nav>
-
-      {pathname === '/' && <PortControls />}
-    </header>
+    </aside>
   )
 }
 
-function PortControls() {
-  const { tracking, setTracking, scanning, scannedAt, entries, refresh } = useApp()
+function DiskMeter() {
+  const { disk } = useStorage()
+  if (!disk) return null
+  const used = disk.totalBytes - disk.freeBytes
 
   return (
-    <div className="ml-auto flex items-center gap-2">
-      <span className="hidden items-center gap-1.5 text-[11.5px] text-ink-faint sm:flex">
-        <span
-          className={cx(
-            'size-[6px] rounded-full',
-            tracking ? 'live-dot bg-live' : 'bg-held',
-          )}
-        />
-        {entries.length} {entries.length === 1 ? 'port' : 'ports'}
-        {scannedAt && (
-          <span className="tabular-nums text-ink-faint/60">
-            · {formatClock(scannedAt)}
-          </span>
-        )}
-      </span>
-
-      <Tip content="Rescan now">
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          disabled={scanning}
-          aria-label="Rescan now"
-          className="btn btn-ghost no-drag px-1.5"
-        >
-          <RefreshCw size={13} className={scanning ? 'animate-spin' : undefined} />
-        </button>
-      </Tip>
-
-      <Tip content={tracking ? 'Pause live tracking' : 'Resume live tracking'}>
-        <button
-          type="button"
-          onClick={() => setTracking(!tracking)}
-          className={cx('btn no-drag', tracking ? '' : 'border-held/40 bg-held/10 text-held')}
-        >
-          {tracking ? <Pause size={12} /> : <Play size={12} />}
-          {tracking ? 'Tracking' : 'Paused'}
-        </button>
-      </Tip>
-    </div>
+    <Link
+      to="/storage"
+      search={{}}
+      className="block rounded-lg border border-line px-3 py-2.5 transition-colors hover:bg-surface-2"
+    >
+      <div className="flex items-baseline justify-between gap-2 text-[11.5px]">
+        <span className="text-ink-dim">Disk</span>
+        <span className="tabular-nums text-ink-faint">{formatBytes(disk.freeBytes)} free</span>
+      </div>
+      <div
+        role="img"
+        aria-label={`${Math.round((used / disk.totalBytes) * 100)}% of disk used`}
+        className="mt-2 h-1 overflow-hidden rounded-full bg-surface-3"
+      >
+        <div className="h-full bg-ink-dim" style={{ width: `${(used / disk.totalBytes) * 100}%` }} />
+      </div>
+    </Link>
   )
 }

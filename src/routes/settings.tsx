@@ -28,10 +28,10 @@ function SettingsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-[560px] px-6 py-7">
+      <div className="mx-auto max-w-[600px] px-6 pb-8 pt-5">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-[17px] font-semibold tracking-tight text-ink">Settings</h1>
+            <h1 className="text-[20px] font-semibold tracking-tight text-ink">Settings</h1>
             <p className="mt-0.5 text-[12px] text-ink-faint">
               Stored locally. Nothing leaves your machine.
             </p>

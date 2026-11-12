@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -53,6 +54,11 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const inFlight = useRef(false)
+
+  // Cheap enough to read up front, so the sidebar can show free space before a scan.
+  useEffect(() => {
+    diskUsage().then(setDisk, (e) => setError(errorMessage(e)))
+  }, [])
 
   const measure = useCallback(async (id: string) => {
     const next = await measureTarget(id)

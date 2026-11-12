@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { AlertTriangle, Plug, Search, SearchX, X } from 'lucide-react'
+import { AlertTriangle, Pause, Play, Plug, RefreshCw, Search, SearchX, X } from 'lucide-react'
 import { ActionsProvider } from '~/components/actions'
 import { PortDetail } from '~/components/PortDetail'
 import { PortsTable } from '~/components/PortsTable'
-import { Empty, SelectField, cx } from '~/components/ui'
+import { Empty, PageHeader, SelectField, Tip, cx } from '~/components/ui'
 import {
   DEFAULT_SEARCH,
   filterAndSort,
@@ -12,6 +12,7 @@ import {
   type PortsSearch,
   type SortKey,
 } from '~/lib/filter'
+import { formatClock } from '~/lib/format'
 import { useApp } from '~/lib/store'
 
 export const Route = createFileRoute('/')({
@@ -35,6 +36,7 @@ function PortsPage() {
   const search = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
   const { entries, settings, initialising, error, warnings } = useApp()
+  const { tracking, setTracking, scanning, scannedAt, refresh } = useApp()
   const searchRef = useRef<HTMLInputElement>(null)
 
   const setSearch = (patch: Partial<PortsSearch>, viewTransition = false) =>
@@ -92,7 +94,44 @@ function PortsPage() {
     <ActionsProvider>
       <div className="flex h-full">
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-4 py-2.5">
+          <PageHeader
+            title="Ports"
+            subtitle={
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={cx('size-[6px] rounded-full', tracking ? 'live-dot bg-live' : 'bg-held')}
+                />
+                {entries.length} listening
+                {scannedAt && <span className="tabular-nums">· updated {formatClock(scannedAt)}</span>}
+              </span>
+            }
+            actions={
+              <>
+                <Tip content="Rescan now">
+                  <button
+                    type="button"
+                    onClick={() => void refresh()}
+                    disabled={scanning}
+                    aria-label="Rescan now"
+                    className="btn btn-ghost px-1.5"
+                  >
+                    <RefreshCw size={13} className={scanning ? 'animate-spin' : undefined} />
+                  </button>
+                </Tip>
+                <Tip content={tracking ? 'Pause live tracking' : 'Resume live tracking'}>
+                  <button
+                    type="button"
+                    onClick={() => setTracking(!tracking)}
+                    className={cx('btn', !tracking && 'border-held/40 bg-held/10 text-held')}
+                  >
+                    {tracking ? <Pause size={12} /> : <Play size={12} />}
+                    {tracking ? 'Tracking' : 'Paused'}
+                  </button>
+                </Tip>
+              </>
+            }
+          />
+          <div className="flex shrink-0 items-center gap-2 border-b border-line px-6 pb-4">
             <div className="relative min-w-0 flex-1">
               <Search
                 size={13}
@@ -197,7 +236,7 @@ function PortsPage() {
             )}
           </div>
 
-          <footer className="flex h-7 shrink-0 items-center justify-between border-t border-line bg-surface px-4 text-[11px] text-ink-faint">
+          <footer className="flex h-8 shrink-0 items-center justify-between border-t border-line px-6 text-[11px] text-ink-faint">
             <span>
               {visible.length} of {entries.length} shown
               {settings.hideSystem && ' · system ports hidden'}

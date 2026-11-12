@@ -151,6 +151,27 @@ export function StateDot({ state, paused }: { state: string; paused: boolean }) 
   return <span className={cx('inline-block size-[7px] shrink-0 rounded-full', tone)} />
 }
 
+/** The title row every page starts with. */
+export function PageHeader({
+  title,
+  subtitle,
+  actions,
+}: {
+  title: React.ReactNode
+  subtitle?: React.ReactNode
+  actions?: React.ReactNode
+}) {
+  return (
+    <header className="flex shrink-0 items-start justify-between gap-4 px-6 pb-4 pt-5">
+      <div className="min-w-0">
+        <h1 className="text-[20px] font-semibold tracking-tight text-ink">{title}</h1>
+        {subtitle && <p className="mt-1 text-[12.5px] text-ink-faint">{subtitle}</p>}
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+    </header>
+  )
+}
+
 export function Empty({
   icon,
   title,

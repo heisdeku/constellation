@@ -1,15 +1,17 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-canvas: #0a0c10;
-  --color-surface: #101319;
-  --color-surface-2: #161a22;
-  --color-surface-3: #1d222c;
-  --color-line: #242a35;
-  --color-line-soft: #1b202a;
-  --color-ink: #e8ebf1;
-  --color-ink-dim: #a3acbd;
-  --color-ink-faint: #6b7488;
+  /* Neutral graphite: the window and sidebar are canvas, each page sits on a
+     slightly lighter surface pane, and cards and hovers step up from there. */
+  --color-canvas: #121214;
+  --color-surface: #19191c;
+  --color-surface-2: #202024;
+  --color-surface-3: #29292e;
+  --color-line: #27272b;
+  --color-line-soft: #202024;
+  --color-ink: #ededef;
+  --color-ink-dim: #a1a1aa;
+  --color-ink-faint: #71717a;
 
   --color-live: #34d399;
   --color-held: #fbbf24;
@@ -105,6 +107,14 @@
 
   .btn-danger:hover:not(:disabled) {
     @apply border-danger/40 bg-danger/10 text-danger;
+  }
+
+  /* The one main action on a page. */
+  .btn-primary {
+    @apply border-transparent bg-ink text-canvas;
+  }
+  .btn-primary:hover:not(:disabled) {
+    @apply border-transparent bg-white text-canvas;
   }
 
   .btn-accent {
