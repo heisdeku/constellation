@@ -4,231 +4,173 @@
 
 # System Manager
 
-**See what's running on your Mac and what's really filling its disk.**
+**See what's using your Mac's ports and disk, and clear space without breaking anything.**
 
-A desktop app with two jobs. **Ports** lists every listening port, identifies the
-process behind it, and lets you pause or stop it. **Storage** shows what macOS hides
-under System Data, measures what deleting it would really free, and clears it safely.
-
-Tauri v2 · Rust · React 19 · TanStack Router · Tailwind v4 · Base UI
+[Install](#install) · [Ports](#ports) · [Storage](#storage) · [Privacy](#privacy-and-permissions) · [Development](docs/development.md)
 
 </div>
 
-![The port list](docs/images/ports.png)
+![The Storage overview, using the same categories as System Settings](docs/images/storage.png)
 
-## Why
+System Settings shows how much space System Data takes, but not what's in it, and
+offers no way to remove any of it. System Manager breaks it down into the caches,
+package stores and leftover files behind it, shows what deleting each one would really
+free, and clears the ones that rebuild themselves.
 
-`lsof -i :3000` tells you a PID. It doesn't tell you *which project* that is.
+It also lists every listening port on your Mac with the project folder behind it, so
+"what's on 5173 and can I stop it?" takes one glance instead of three commands.
 
-If you run several dev servers, a few worktrees and some containers, the answer
-to "what's on 5173 and can I kill it?" takes three commands and a guess. System
-Manager answers it in one glance — and the folder name is the answer, not the PID.
+## Install
 
-## What it does
+System Manager runs on macOS 10.15 or later, on Apple Silicon and Intel.
 
-- **Every listening port, live.** TCP by default, UDP opt-in, rescanned on an
-  interval you choose. IPv4 and IPv6 bindings for the same port collapse into one row.
-- **Identifies the owner.** Process name, full command line, PID, user, CPU, memory
-  and uptime.
-- **Links to the folder.** Walks up from the process's working directory to find the
-  project root — `package.json`, `Cargo.toml`, `go.mod`, `.git` and ten more markers —
-  and reads the real package name. Reveal in Finder, open in Terminal, or open in your editor.
-- **Flags dead folders.** A dev server from a deleted worktree keeps its port. Those
-  rows are marked, because there is nothing left to open.
-- **Names containers.** Docker-published ports show the container and image instead of
-  the opaque `com.docker.backend` process.
-- **Shows reach.** Whether a port is loopback-only or exposed to your whole network.
-- **Pause, resume, stop.** Detailed below.
+### With the install script
 
-## Pause vs. stop
+```bash
+curl -fsSL https://raw.githubusercontent.com/heisdeku/constellation/main/scripts/install.sh | bash
+```
 
-This is the part worth understanding, because "pause" is not a UI state — it is a
-real signal to a real process.
+The script downloads the latest release, checks its SHA-256 checksum against the one
+published with it, and installs the app to `/Applications`. Run it again to update.
 
-| Action | Signal | Effect |
+To install a specific version, or to remove the app:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/heisdeku/constellation/main/scripts/install.sh | bash -s -- --version 0.1.0
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/heisdeku/constellation/main/scripts/install.sh | bash -s -- --uninstall
+```
+
+### With Homebrew
+
+```bash
+brew tap heisdeku/tap
+```
+
+```bash
+brew trust --tap heisdeku/tap
+```
+
+```bash
+brew install --cask system-manager
+```
+
+Homebrew asks you to trust a tap before it installs from one that isn't official.
+
+### From the disk image
+
+Download the `.dmg` from the [latest release](https://github.com/heisdeku/constellation/releases/latest)
+and drag System Manager into Applications.
+
+System Manager isn't notarised by Apple yet, so the first time you open a copy
+downloaded in a browser, macOS says it can't check the app for malware. To open it:
+
+1. Open System Manager once and close the warning.
+2. Open System Settings › Privacy & Security.
+3. Under Security, click Open Anyway next to System Manager, then confirm.
+
+Or remove the download flag in Terminal, which has the same effect:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/System Manager.app"
+```
+
+The install script and Homebrew do this for you, so their installs open without a
+warning.
+
+## Ports
+
+![The port list with one port's details open](docs/images/ports.png)
+
+Every listening port on the Mac, with the process behind it and the project it runs from.
+
+- Each row shows the process name, command line, PID, CPU and memory. IPv4 and IPv6
+  bindings of the same port share one row.
+- The folder comes from the process's working directory, walked up to the nearest
+  `package.json`, `Cargo.toml`, `go.mod` or similar. Open it in Finder, Terminal or
+  your editor.
+- A dev server whose worktree was deleted still holds its port. Its folder is marked
+  Deleted.
+- Docker ports show the container and image instead of `com.docker.backend`.
+- Each port says whether only this Mac can reach it, or your whole network.
+
+Pause and stop send real signals to the process:
+
+| Action | Signal | What happens |
 | --- | --- | --- |
-| **Pause** | `SIGSTOP` | Freezes the process. It stops doing work but **keeps the port bound**, so nothing else can claim it. |
-| **Resume** | `SIGCONT` | Continues from exactly where it stopped. |
-| **Stop** | `SIGTERM` | Asks it to shut down and release the port. |
-| **Force stop** | `SIGKILL` | Only after `SIGTERM` is ignored, and only as a separate, explicit click. |
+| Pause | `SIGSTOP` | The process freezes but keeps its port, so nothing else can take it. |
+| Resume | `SIGCONT` | It carries on from where it stopped. |
+| Stop | `SIGTERM` | It shuts down and releases the port. |
+| Force stop | `SIGKILL` | Offered only after a process ignores Stop. |
 
-Pausing is the useful one: a Next.js dev server you aren't looking at still burns CPU
-and watches the filesystem. Freeze it, keep the port, thaw it when you come back.
+Pause a dev server you aren't using right now. It stops using CPU and keeps its port
+until you resume it.
 
-![Details for a single port](docs/images/detail.png)
+System Manager won't signal macOS's own critical processes, processes run by other
+users, or itself. It also checks that the PID still belongs to the process you picked,
+so a recycled PID is never hit.
 
 ## Storage
 
-System Settings lumps caches, package stores and hidden folders together as System
-Data and offers no way to clear them. The Storage tab uses the same categories as
-System Settings, from Applications to System Data, and each one opens to show what's
-inside. Your own folders can be drilled into as far as you like.
+![System Data broken down into what can be cleared](docs/images/storage-category.png)
 
-What happens to an item depends on whether it can come back:
+Storage uses the same categories as System Settings. Open one to see what's inside,
+and open your own folders as far down as you need.
 
 | Category | What you can do |
 | --- | --- |
 | Developer, System Data | Delete. These rebuild themselves, so they skip the Trash. |
-| Applications, Documents, iCloud Drive | Move to the Trash, with Put Back available. Space returns once it's emptied. |
-| Messages, Photos | View only, with a button to open the app. Removing files from inside these libraries corrupts them. |
+| Applications, Documents, iCloud Drive | Move to the Trash, where Put Back works. The space returns when you empty the Trash. |
+| Messages, Photos | View only, with a button to open the app. Removing files from inside their libraries corrupts them. |
 | macOS | View only. |
 
-**Sizes are what you'd get back, not what `du` says.** APFS clones and hard links
-share disk blocks, so a folder can look enormous and free almost nothing. Chrome
-leaves a clone of itself behind each time it crashes: 69 of them read as 118 GB in `du`
-and occupied under 5 GB. Each file's clone ID and reference count are read from APFS,
-and a shared block only counts if deleting the folder would really release it.
+Sizes show what deleting would free, which is often much less than Finder or `du`
+reports. APFS lets files share disk blocks, and a shared block only comes back once
+nothing uses it. On one Mac, Chrome had left 69 copies of itself behind after crashes.
+`du` counted them as 118 GB; deleting them all freed 2.3 GB, and that's the number
+System Manager shows.
 
-Every item carries a tier:
+Each item is marked:
 
-| Tier | Meaning |
+| Mark | Meaning |
 | --- | --- |
-| **Safe** | Rebuilds itself. The cost is a slower next launch or install. |
-| **Review** | Removable, but check first: it may hold something you can't simply rebuild. |
-| **Keep** | Shown so the space is accounted for. It can't be deleted here. |
+| Safe | Rebuilds itself. The cost is a slower next launch or install. |
+| Review | Check it first. You may not be able to get it back by reinstalling. |
+| Trash | Goes to the Trash, so you can put it back. |
+| Keep | Counted, but can't be removed here. |
 
-Nothing is selected by default, and cleaning always asks first.
+Nothing is selected until you select it, and every clean shows the full list before
+anything is removed. It also refuses to touch:
 
-- The UI sends an id, never a path to delete. The backend resolves it and rejects
-  anything that escapes its folder. Your home Library, dotfiles such as `~/.ssh`, the
-  inside of a `.git` folder and photo libraries can't be reached at all.
-- Apps must be quit first, and System Manager won't remove itself.
-- What gets measured is exactly what gets deleted: both walk the same list.
-- A cache folder replaced by a symlink is refused, and symlinks inside are removed
-  without following them.
-- Project folders only count alongside their marker file, so a `target` folder with
-  no `Cargo.toml` beside it is ignored. Projects with a listening port can't be selected.
-- Folders System Integrity Protection guards are skipped, not attempted: nothing can
-  delete them, not even root. Anything else macOS refuses is reported as protected.
-- Temp files younger than three days, and sockets of any age, are left alone. The
-  newest browser clone is kept because a running browser may be using it.
+- your home Library, dotfiles such as `~/.ssh`, the inside of `.git` folders and photo
+  libraries
+- a project's dependencies while that project has a server running
+- an app that's still open
+- folders macOS protects with System Integrity Protection
+- temporary files changed in the last three days
 
-Some folders are private to macOS. Grant Full Disk Access in System Settings to include
-them; without it the app says how many items it couldn't read.
+## Privacy and permissions
 
-## Safety
+System Manager makes no network requests. It runs as you, with no admin password and
+no background process, and reads your Mac only while it's open.
 
-Signalling other people's processes is easy to get wrong, so the rules are strict:
+macOS may ask for a few permissions the first time you use Storage:
 
-- PID 1 and below, and System Manager itself, are never signalled.
-- Critical macOS processes are protected by name — `launchd`, `WindowServer`,
-  `loginwindow`, `Finder`, `coreaudiod` and others.
-- Processes owned by another user are read-only. macOS would reject the signal
-  anyway, so the controls are disabled rather than left to fail.
-- Every signal re-checks that the PID still refers to the process you selected, so a
-  recycled PID cannot be hit by mistake.
-- `SIGKILL` is never sent automatically.
-- Losing the race — the process exits on its own between the check and the signal —
-  is reported as success, not as an error.
+- Access to Desktop, Documents and Downloads, to measure them.
+- Control of Finder, to move items to the Trash. Without it, Trash moves fail and the
+  app tells you why.
+- Full Disk Access, which is optional. Without it, Storage can't see Messages, Photos
+  or a few system folders, and says how many items it couldn't read. To grant it,
+  open System Settings › Privacy & Security › Full Disk Access, click +, and choose
+  System Manager.
 
-## Running it
+## Development
 
-```bash
-pnpm install
-pnpm app
-```
-
-`pnpm app` runs `tauri dev`, which starts Vite and the Rust app together.
-
-> `pnpm dev` alone only serves the web UI. It has no backend, so it cannot read
-> ports — the app will tell you so if you try.
-
-### Installing it
-
-`pnpm app` runs a bare debug binary straight from the build directory — it never
-becomes a `.app`, so it won't appear in `/Applications`, Spotlight or the Dock's
-"keep" list. To get a real application:
-
-```bash
-pnpm app:build
-```
-
-That produces both a bundle and a disk image:
-
-```
-src-tauri/target/release/bundle/macos/System Manager.app
-src-tauri/target/release/bundle/dmg/System Manager_0.1.0_aarch64.dmg
-```
-
-Copy the `.app` into `/Applications` (or open the `.dmg` and drag it there):
-
-```bash
-cp -R "src-tauri/target/release/bundle/macos/System Manager.app" /Applications/
-```
-
-The bundle is ad-hoc signed, which is enough to run locally without a Gatekeeper
-prompt. Distributing it to other Macs would need a Developer ID signature and
-notarisation.
-
-For a quick installable build without release optimisation, `pnpm tauri build --debug`
-bundles the existing debug artifacts in under a minute.
-
-### Requirements
-
-- macOS — the scanner shells out to `lsof`, `ps` and `open`
-- Node 20+ and pnpm
-- Rust stable — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-
-No admin rights, no background daemon, no network access. Everything runs as you,
-on demand, and nothing leaves the machine.
-
-## How the scan works
-
-Six processes per scan, run in parallel, each with a hard timeout so a stale network
-mount can't hang the window.
-
-| Step | Command |
-| --- | --- |
-| Listening sockets | `lsof -nP -w -iTCP -sTCP:LISTEN -F pftPn` |
-| UDP sockets (opt-in) | `lsof -nP -w -iUDP -F pftPn` |
-| Process stats | `ps -axo pid=,ppid=,state=,user=,%cpu=,%mem=,etime=` |
-| Executable path | `ps -axo pid=,comm=` |
-| Command line | `ps -axo pid=,command=` |
-| Working directory | `lsof -a -w -p <pids> -d cwd -F pn` |
-| Containers | `docker ps` — only when a Docker process is actually present |
-
-`comm` and `command` need separate `ps` calls because both can contain spaces, so
-each has to be the last column of its own invocation.
-
-![Settings](docs/images/settings.png)
-
-## Tests
-
-```bash
-cd src-tauri && cargo test
-```
-
-Unit tests cover the `lsof` field parser, `ps` elapsed-time and column splitting,
-process-state mapping, `.app` bundle detection and project-root walking against fixed
-samples. Two integration tests run a real scan of the host machine and assert the
-whole pipeline holds — including that `cwd_exists` matches the filesystem.
-
-Storage tests run inside throwaway folders and never touch real data. They create real
-APFS clones and hard links to check sizing, and try to escape the delete boundary with
-crafted ids and symlinks.
-
-## Layout
-
-```
-src/
-  routes/          TanStack Router file routes (__root, index, storage, settings)
-  components/      Table, detail panel, actions provider, Base UI wrappers
-  lib/             Tauri bindings, filtering/sorting, formatting, app and storage stores
-src-tauri/src/
-  lib.rs           Tauri command surface
-  ports.rs         lsof parsing, grouping, Docker enrichment
-  proc.rs          ps snapshot, cwd resolution, project-root detection
-  control.rs       Signals, and the Finder/Terminal/editor jump-offs
-  storage.rs       Clone-aware sizing, the cleanup catalogue, safe deletion
-  sh.rs            Subprocess runner with timeouts
-docs/icon.svg      Icon artwork, with regeneration instructions
-```
-
-## Notes
-
-Screenshots use a representative dataset rather than a real machine, so that no
-project paths end up in version control.
+Building from source, running the tests and publishing a release are covered in
+[docs/development.md](docs/development.md).
 
 ## License
 
-MIT
+[MIT](LICENSE)
