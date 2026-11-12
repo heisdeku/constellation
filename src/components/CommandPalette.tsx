@@ -6,7 +6,7 @@ import { CATEGORIES } from '~/lib/categories'
 import { DEFAULT_SEARCH } from '~/lib/filter'
 import { wellKnownName } from '~/lib/format'
 import { useApp } from '~/lib/store'
-import { cx } from './ui'
+import { StateDot, cx } from './ui'
 
 interface Item {
   id: string
@@ -70,7 +70,7 @@ export function CommandPalette({
       section: 'Ports' as const,
       label: `${entry.port}  ${entry.docker?.name ?? entry.process.name}`,
       meta: entry.process.project?.name ?? wellKnownName(entry.port) ?? entry.protocol,
-      icon: <span className="size-[7px] rounded-full bg-live" />,
+      icon: <StateDot state={entry.process.state} paused={entry.process.paused} />,
       keywords: `${entry.process.command} ${entry.pid}`,
       run: go(() => void navigate({ to: '/', search: { ...DEFAULT_SEARCH, sel: entry.id } })),
     })),

@@ -46,7 +46,7 @@ export function PortDetail({
   onClose: () => void
   onClosed: () => void
 }) {
-  const { home } = useApp()
+  const { home, settings } = useApp()
   const actions = useActions()
   const p = entry.process
   const folder = folderFor(entry)
@@ -95,7 +95,7 @@ export function PortDetail({
           type="button"
           onClick={onClose}
           aria-label="Close details"
-          className="btn btn-ghost px-1.5"
+          className="btn btn-ghost -mr-1.5 size-7 p-0"
         >
           <X size={13} />
         </button>
@@ -215,7 +215,7 @@ export function PortDetail({
             <button
               type="button"
               aria-label="Copy command"
-              className="btn btn-ghost px-1"
+              className="btn btn-ghost size-6 p-0"
               onClick={() => void actions.copy(p.command, 'Command')}
             >
               <Copy size={11} />
@@ -244,7 +244,7 @@ export function PortDetail({
           onClick={() => actions.stop(entry)}
           className="btn btn-danger flex-1"
         >
-          <Square size={11} /> Stop
+          <Square size={11} /> {settings.confirmStop ? 'Stop…' : 'Stop'}
         </button>
       </footer>
     </aside>
@@ -278,7 +278,7 @@ function Row({
           <button
             type="button"
             aria-label={`Copy ${label}`}
-            className="ml-1.5 align-middle text-ink-faint hover:text-ink"
+            className="-my-1 ml-1 inline-flex size-5 items-center justify-center rounded align-middle text-ink-faint hover:bg-surface-3 hover:text-ink"
             onClick={() => void onCopy(value, label)}
           >
             <Copy size={10} />

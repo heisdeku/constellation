@@ -13,6 +13,7 @@ import {
   type SortKey,
 } from '~/lib/filter'
 import { formatClock } from '~/lib/format'
+import { useMenu } from '~/lib/menu'
 import { useApp } from '~/lib/store'
 
 export const Route = createFileRoute('/')({
@@ -29,7 +30,7 @@ const PROTO_ITEMS = [
 const SCOPE_ITEMS = [
   { value: 'all', label: 'Any reach' },
   { value: 'loopback', label: 'Local only' },
-  { value: 'lan', label: 'On network' },
+  { value: 'lan', label: 'Network' },
 ] as const
 
 function PortsPage() {
@@ -72,20 +73,11 @@ function PortsPage() {
     }
   }, [entries, search.sel, initialising])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
-        e.preventDefault()
-        searchRef.current?.focus()
-        searchRef.current?.select()
-      }
-      if (e.key === 'Escape' && document.activeElement === searchRef.current) {
-        searchRef.current?.blur()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  useMenu('find', () => {
+    searchRef.current?.focus()
+    searchRef.current?.select()
+  })
+  useMenu('rescan', () => void refresh())
 
   const onSort = (key: SortKey) =>
     setSearch(
@@ -99,7 +91,14 @@ function PortsPage() {
 
   return (
     <ActionsProvider>
-      <div className="relative flex h-full">
+      <div
+        className="relative flex h-full"
+        onKeyDown={(e) => {
+          if (e.key !== 'Escape' || !search.sel || closing) return
+          if (!e.currentTarget.contains(e.target as Node)) return
+          select(null)
+        }}
+      >
         <div className="flex min-w-0 flex-1 flex-col">
           <PageHeader
             title="Ports"
@@ -125,14 +124,15 @@ function PortsPage() {
                     <RefreshCw size={13} className={scanning ? 'animate-spin' : undefined} />
                   </button>
                 </Tip>
-                <Tip content={tracking ? 'Pause live tracking' : 'Resume live tracking'}>
+                <Tip content={tracking ? 'Stop rescanning every few seconds' : 'Rescan every few seconds'}>
                   <button
                     type="button"
                     onClick={() => setTracking(!tracking)}
+                    aria-pressed={!tracking}
                     className={cx('btn', !tracking && 'border-held/40 bg-held/10 text-held')}
                   >
                     {tracking ? <Pause size={12} /> : <Play size={12} />}
-                    {tracking ? 'Tracking' : 'Paused'}
+                    {tracking ? 'Pause Updates' : 'Resume Updates'}
                   </button>
                 </Tip>
               </>
@@ -149,6 +149,12 @@ function PortsPage() {
                 type="text"
                 value={search.q}
                 onChange={(e) => setSearch({ q: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Escape') return
+                  e.stopPropagation()
+                  if (search.q) setSearch({ q: '' })
+                  else e.currentTarget.blur()
+                }}
                 placeholder="Search port, process, project or PID…"
                 aria-label="Search ports"
                 className="field pl-8 pr-8"
@@ -158,7 +164,7 @@ function PortsPage() {
                   type="button"
                   aria-label="Clear search"
                   onClick={() => setSearch({ q: '' })}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-faint hover:text-ink"
+                  className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-ink-faint hover:text-ink"
                 >
                   <X size={13} />
                 </button>

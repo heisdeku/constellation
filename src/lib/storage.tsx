@@ -49,6 +49,8 @@ interface StorageState {
 
 const StorageContext = createContext<StorageState | null>(null)
 
+const SKIP_ACCESS_KEY = 'mare.scanWithoutAccess'
+
 export function StorageProvider({ children }: { children: React.ReactNode }) {
   const [disk, setDisk] = useState<DiskUsage | null>(null)
   const [targets, setTargets] = useState<StorageTarget[]>([])
@@ -61,7 +63,7 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const inFlight = useRef(false)
   const [access, setAccess] = useState<Access>('checking')
-  const [withoutAccess, setWithoutAccess] = useState(false)
+  const [withoutAccess, setWithoutAccess] = useState(() => localStorage.getItem(SKIP_ACCESS_KEY) === '1')
   const [scanned, setScanned] = useState<Scope | null>(null)
 
   const checkAccess = useCallback(async () => {
@@ -164,7 +166,10 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
       needsScan: wanted !== null && scanned !== wanted,
       limited: scanned === 'limited',
       checkAccess,
-      scanWithoutAccess: () => setWithoutAccess(true),
+      scanWithoutAccess: () => {
+        localStorage.setItem(SKIP_ACCESS_KEY, '1')
+        setWithoutAccess(true)
+      },
       disk,
       targets,
       browsed,

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Link, Outlet, createRootRoute } from '@tanstack/react-router'
+import { useState } from 'react'
+import { Link, Outlet, createRootRoute, useNavigate } from '@tanstack/react-router'
 import { Toast } from '@base-ui-components/react/toast'
 import { Tooltip } from '@base-ui-components/react/tooltip'
 import { HardDrive, Plug, Search, Settings } from 'lucide-react'
@@ -7,7 +7,9 @@ import { CommandPalette } from '~/components/CommandPalette'
 import { Logo } from '~/components/Logo'
 import { ToastViewport } from '~/components/Toaster'
 import { Tip } from '~/components/ui'
+import { DEFAULT_SEARCH } from '~/lib/filter'
 import { formatBytes } from '~/lib/format'
+import { useMenu } from '~/lib/menu'
 import { AppProvider } from '~/lib/store'
 import { StorageProvider, useStorage } from '~/lib/storage'
 
@@ -15,17 +17,12 @@ export const Route = createRootRoute({ component: RootLayout })
 
 function RootLayout() {
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const navigate = useNavigate()
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault()
-        setPaletteOpen((open) => !open)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  useMenu('palette', () => setPaletteOpen((open) => !open))
+  useMenu('settings', () => void navigate({ to: '/settings', viewTransition: true }))
+  useMenu('ports', () => void navigate({ to: '/', search: DEFAULT_SEARCH, viewTransition: true }))
+  useMenu('storage', () => void navigate({ to: '/storage', search: {}, viewTransition: true }))
 
   return (
     <Tooltip.Provider delay={450}>

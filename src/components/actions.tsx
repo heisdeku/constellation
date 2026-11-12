@@ -69,7 +69,7 @@ export function ActionsProvider({ children }: { children: React.ReactNode }) {
             type: 'info',
             timeout: 12000,
             actionProps: {
-              children: 'Force stop',
+              children: 'Force Stop',
               onClick: () => void doStop(entry, true),
             },
           })
@@ -203,12 +203,16 @@ function StopDialog({
   }, [entry])
 
   const target = entry ?? shown
+  const popup = React.useRef<HTMLDivElement>(null)
 
   return (
     <AlertDialog.Root open={entry !== null} onOpenChange={(open) => !open && onClose()}>
       <AlertDialog.Portal>
-        <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px] transition-opacity duration-150 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
-        <AlertDialog.Popup className="popup fixed left-1/2 top-1/2 z-50 w-[420px] -translate-x-1/2 -translate-y-1/2 p-5">
+        <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px] motion-reduce:backdrop-blur-none transition-opacity duration-150 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
+        <AlertDialog.Popup
+          ref={popup}
+          initialFocus={popup}
+          className="popup fixed left-1/2 top-1/2 z-50 w-[420px] -translate-x-1/2 -translate-y-1/2 p-5">
           <AlertDialog.Title className="text-[14px] font-semibold text-ink">
             Stop {target?.process.name}?
           </AlertDialog.Title>
@@ -227,11 +231,10 @@ function StopDialog({
             <AlertDialog.Close className="btn">Cancel</AlertDialog.Close>
             <button
               type="button"
-              autoFocus
               className="btn border-danger/40 bg-danger/15 text-danger hover:!bg-danger/25"
               onClick={() => target && onConfirm(target)}
             >
-              Stop process
+              Stop
             </button>
           </div>
         </AlertDialog.Popup>

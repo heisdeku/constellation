@@ -26,6 +26,7 @@ import {
   type StorageTarget,
 } from '~/lib/api'
 import { basename, formatAge, formatBytes, tildify } from '~/lib/format'
+import { useMenu } from '~/lib/menu'
 import { useApp } from '~/lib/store'
 import { CATEGORIES, type CategoryId } from '~/lib/categories'
 import { transitionName, useListMotion } from '~/lib/motion'
@@ -94,6 +95,7 @@ function StoragePage() {
   const { disk, targets, browsed, measurements, measuredCount, scanning, cleaning, error } =
     storage
   const { selected, scan, browse, setSelected } = storage
+  useMenu('rescan', () => void scan())
   const { category, path } = Route.useSearch()
   const { entries, home } = useApp()
   const [confirming, setConfirming] = useState(false)
@@ -219,7 +221,7 @@ function StoragePage() {
                 className="btn shrink-0 py-1"
                 onClick={() => void openPrivacySettings().catch(failed('Could not open System Settings'))}
               >
-                Allow access
+                Open System Settings…
               </button>
             </div>
           )}
@@ -268,7 +270,22 @@ function StoragePage() {
 
       {storage.access !== 'checking' && !askAccess && (
         <footer className="flex h-12 shrink-0 items-center gap-3 border-t border-line px-6">
-          <span className="text-[11.5px] text-ink-faint">
+          {scanning && (
+            <div
+              role="progressbar"
+              aria-label="Scan progress"
+              aria-valuemin={0}
+              aria-valuemax={targets.length}
+              aria-valuenow={measuredCount}
+              className="h-1 w-24 overflow-hidden rounded-full bg-surface-3"
+            >
+              <div
+                className="h-full bg-ink-dim transition-[width] duration-200"
+                style={{ width: `${targets.length ? (measuredCount / targets.length) * 100 : 0}%` }}
+              />
+            </div>
+          )}
+          <span className="text-[11.5px] tabular-nums text-ink-faint">
             {scanning
               ? `Measuring ${measuredCount} of ${targets.length}…`
               : `${formatBytes(safeBytes)} safe to clean`}
@@ -280,7 +297,7 @@ function StoragePage() {
               disabled={safeTargets.length === 0 || cleaning}
               onClick={() => setSelected(new Set(safeTargets.map((t) => t.id)))}
             >
-              Select all safe
+              Select All Safe
             </button>
             <button
               type="button"
@@ -295,7 +312,7 @@ function StoragePage() {
                 setConfirming(true)
               }}
             >
-              {cleaning ? 'Cleaning…' : `Clean ${formatBytes(chosenBytes)}`}
+              {cleaning ? 'Cleaning…' : `Clean ${formatBytes(chosenBytes)}…`}
             </button>
           </div>
         </footer>
@@ -662,7 +679,7 @@ function GroupSection({
           <h2 className="text-[10.5px] font-medium uppercase tracking-wider text-ink-faint">
             {title}
           </h2>
-          <p className="mt-0.5 text-[11.5px] text-ink-faint/70">{hint}</p>
+          <p className="mt-0.5 text-[11.5px] text-ink-faint">{hint}</p>
         </div>
         <span className="shrink-0 text-[12px] font-medium tabular-nums text-ink-dim">
           {formatBytes(total)}
@@ -763,8 +780,8 @@ function Row({
           disabled={!enabled}
           onCheckedChange={onToggle}
           aria-label={`Select ${target.label}`}
-          className="flex size-4 shrink-0 items-center justify-center rounded border border-line
-            bg-surface-3 transition-colors data-[checked]:border-live/50 data-[checked]:bg-live/25
+          className="relative flex size-4 shrink-0 items-center justify-center rounded border border-ink-faint/50
+            bg-surface-3 after:absolute after:-inset-1.5 after:content-[''] transition-colors data-[checked]:border-live/50 data-[checked]:bg-live/25
             data-[disabled]:opacity-30"
         >
           <Checkbox.Indicator className="text-live">
@@ -836,7 +853,7 @@ function Row({
           type="button"
           onClick={() => onOpen(target.path)}
           aria-label={`Open ${target.label}`}
-          className="shrink-0 text-ink-faint hover:text-ink-dim"
+          className="-mr-1.5 flex size-6 shrink-0 items-center justify-center rounded text-ink-faint hover:bg-surface-2 hover:text-ink-dim"
         >
           <ChevronRight size={13} />
         </button>
@@ -868,18 +885,23 @@ function ConfirmClean({
   const icloud = toTrash.some((t) => t.group === 'icloud')
 
   const mixed = toDelete.length > 0 && toTrash.length > 0
+  const recoverable = toDelete.length === 0
+  const popup = useRef<HTMLDivElement>(null)
+  const confirm = useRef<HTMLButtonElement>(null)
   const wording = () => {
     if (mixed) return { title: `Clean ${formatBytes(bytes)}?`, action: 'Clean' }
     return toTrash.length > 0
       ? { title: `Move ${formatBytes(bytes)} to the Trash?`, action: 'Move to Trash' }
-      : { title: `Permanently delete ${formatBytes(bytes)}?`, action: 'Delete permanently' }
+      : { title: `Permanently delete ${formatBytes(bytes)}?`, action: 'Delete Permanently' }
   }
 
   return (
     <AlertDialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
       <AlertDialog.Portal>
-        <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px] transition-opacity duration-150 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
+        <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px] motion-reduce:backdrop-blur-none transition-opacity duration-150 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <AlertDialog.Popup
+          ref={popup}
+          initialFocus={recoverable ? confirm : popup}
           className="popup grow-from fixed left-1/2 top-1/2 z-50 w-[460px] -translate-x-1/2 -translate-y-1/2 p-5"
           style={{ '--from-x': `${from.x}px`, '--from-y': `${from.y}px` } as React.CSSProperties}
         >
@@ -914,8 +936,14 @@ function ConfirmClean({
           <div className="mt-5 flex justify-end gap-2">
             <AlertDialog.Close className="btn">Cancel</AlertDialog.Close>
             <button
+              ref={confirm}
               type="button"
-              className="btn border-danger/40 bg-danger/15 text-danger hover:!bg-danger/25"
+              className={cx(
+                'btn',
+                recoverable
+                  ? 'btn-primary'
+                  : 'border-danger/40 bg-danger/15 text-danger hover:!bg-danger/25',
+              )}
               onClick={onConfirm}
             >
               {wording().action}

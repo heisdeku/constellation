@@ -135,16 +135,22 @@ export function SwitchField({
   )
 }
 
-/** Small coloured dot conveying process state at a glance. */
+/**
+ * Process state at a glance, told apart by shape as well as colour: a filled dot when
+ * running, a ring when paused, a square for a zombie, a faded dot otherwise.
+ */
 export function StateDot({ state, paused }: { state: string; paused: boolean }) {
-  const tone = paused
-    ? 'bg-held'
+  const label = paused ? 'Paused' : state === 'running' ? 'Running' : state
+  const shape = paused
+    ? 'rounded-full border-[1.5px] border-held'
     : state === 'running'
-      ? 'bg-live'
+      ? 'rounded-full bg-live'
       : state === 'zombie'
-        ? 'bg-danger'
-        : 'bg-live/50'
-  return <span className={cx('inline-block size-[7px] shrink-0 rounded-full', tone)} />
+        ? 'rounded-[1px] bg-danger'
+        : 'rounded-full bg-live/50'
+  return (
+    <span role="img" aria-label={label} className={cx('inline-block size-[7px] shrink-0', shape)} />
+  )
 }
 
 /** The title row every page starts with. */

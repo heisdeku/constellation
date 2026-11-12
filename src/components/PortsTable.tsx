@@ -1,3 +1,4 @@
+import { ContextMenu } from '@base-ui-components/react/context-menu'
 import { Menu } from '@base-ui-components/react/menu'
 import {
   ArrowDown,
@@ -14,7 +15,7 @@ import {
   Terminal,
 } from 'lucide-react'
 import type { PortEntry } from '~/lib/api'
-import { folderFor, tildify, wellKnownName } from '~/lib/format'
+import { SCOPE_HINT, SCOPE_LABEL, folderFor, tildify, wellKnownName } from '~/lib/format'
 import { useListMotion } from '~/lib/motion'
 import { useApp } from '~/lib/store'
 import { useActions } from './actions'
@@ -25,7 +26,7 @@ const entryKey = (entry: PortEntry) => entry.id
 
 const GRID =
   'grid grid-cols-[72px_minmax(0,1.5fr)_minmax(0,1.2fr)_88px_96px] @3xl:grid-cols-[86px_minmax(0,1.5fr)_minmax(0,1.35fr)_104px_66px_60px_96px] items-center gap-3 px-6'
-const WIDE_ONLY = 'hidden @3xl:block'
+const WIDE_ONLY = 'hidden text-right @3xl:block'
 
 export function PortsTable({
   entries,
@@ -45,35 +46,62 @@ export function PortsTable({
   const motion = useListMotion(entries, entryKey)
 
   return (
-    <div className="@container flex h-full flex-col">
+    <div
+      ref={motion.ref}
+      role="listbox"
+      aria-label="Listening ports"
+      onKeyDown={(e) => moveSelection(e, onSelect)}
+      className="@container relative h-full overflow-y-auto"
+    >
       <div
         className={cx(
           GRID,
-          'h-8 shrink-0 border-b border-line bg-surface text-[10.5px] font-medium uppercase tracking-wider text-ink-faint',
+          'sticky top-0 z-10 h-8 border-b border-line bg-surface text-[10.5px] font-medium uppercase tracking-wider text-ink-faint',
         )}
       >
         <SortHeader label="Port" k="port" sort={sort} dir={dir} onSort={onSort} />
         <SortHeader label="Process" k="process" sort={sort} dir={dir} onSort={onSort} />
         <SortHeader label="Folder" k="project" sort={sort} dir={dir} onSort={onSort} />
         <span>Reach</span>
-        <SortHeader label="PID" k="pid" sort={sort} dir={dir} onSort={onSort} className={WIDE_ONLY} />
-        <SortHeader label="CPU" k="cpu" sort={sort} dir={dir} onSort={onSort} className={WIDE_ONLY} />
-        <span className="text-right">Actions</span>
+        <SortHeader label="PID" k="pid" sort={sort} dir={dir} onSort={onSort} numeric />
+        <SortHeader label="CPU" k="cpu" sort={sort} dir={dir} onSort={onSort} numeric />
+        <span />
       </div>
 
-      <div ref={motion.ref} className="relative min-h-0 flex-1 overflow-y-auto">
-        {motion.items.map(({ item: entry, leaving }) => (
-          <Row
-            key={entry.id}
-            entry={entry}
-            selected={entry.id === selectedId}
-            leaving={leaving}
-            onSelect={onSelect}
-          />
-        ))}
-      </div>
+      {motion.items.map(({ item: entry, leaving }) => (
+        <Row
+          key={entry.id}
+          entry={entry}
+          selected={entry.id === selectedId}
+          focusable={selectedId ? entry.id === selectedId : entry.id === entries[0]?.id}
+          leaving={leaving}
+          onSelect={onSelect}
+        />
+      ))}
     </div>
   )
+}
+
+/**
+ * Moves the selection with the arrow keys, Home and End, the way a macOS table does,
+ * focusing the row it lands on.
+ */
+function moveSelection(e: React.KeyboardEvent<HTMLElement>, onSelect: (id: string) => void) {
+  const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End']
+  if (!keys.includes(e.key)) return
+  const rows = [...e.currentTarget.querySelectorAll<HTMLElement>(':scope > [data-motion-key]:not([data-leaving])')]
+  const current = rows.findIndex((row) => row.contains(document.activeElement))
+  if (current === -1) return
+  e.preventDefault()
+  const next =
+    e.key === 'Home'
+      ? 0
+      : e.key === 'End'
+        ? rows.length - 1
+        : Math.min(rows.length - 1, Math.max(0, current + (e.key === 'ArrowDown' ? 1 : -1)))
+  rows[next].focus()
+  rows[next].scrollIntoView({ block: 'nearest' })
+  onSelect(rows[next].dataset.motionKey as string)
 }
 
 function SortHeader({
@@ -82,29 +110,31 @@ function SortHeader({
   sort,
   dir,
   onSort,
-  className,
+  numeric,
 }: {
   label: string
-  className?: string
+  numeric?: boolean
   k: SortKey
   sort: SortKey
   dir: SortDir
   onSort: (key: SortKey) => void
 }) {
   const active = sort === k
+  const arrow = active && (dir === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />)
   return (
     <button
       type="button"
       onClick={() => onSort(k)}
+      aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}
       className={cx(
-        'flex items-center gap-1 text-left uppercase tracking-wider transition-colors hover:text-ink-dim',
+        'items-center gap-1 uppercase tracking-wider transition-colors hover:text-ink-dim',
+        numeric ? 'hidden justify-end text-right @3xl:flex' : 'flex text-left',
         active && 'text-ink-dim',
-        className,
       )}
     >
+      {numeric && arrow}
       {label}
-      {active &&
-        (dir === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />)}
+      {!numeric && arrow}
     </button>
   )
 }
@@ -112,15 +142,17 @@ function SortHeader({
 function Row({
   entry,
   selected,
+  focusable,
   leaving,
   onSelect,
 }: {
   entry: PortEntry
   selected: boolean
+  focusable: boolean
   leaving: boolean
   onSelect: (id: string | null) => void
 }) {
-  const { home } = useApp()
+  const { home, settings } = useApp()
   const actions = useActions()
   const busy = actions.busyPid === entry.pid
   const p = entry.process
@@ -129,23 +161,26 @@ function Row({
   const label = entry.docker?.name ?? p.name
 
   return (
-    <div
+    <ContextMenu.Root>
+    <ContextMenu.Trigger
       data-motion-key={entry.id}
       data-leaving={leaving || undefined}
       inert={leaving}
-      role="button"
-      tabIndex={0}
-      onClick={() => onSelect(selected ? null : entry.id)}
+      role="option"
+      aria-selected={selected}
+      tabIndex={focusable ? 0 : -1}
+      onClick={() => onSelect(entry.id)}
+      onContextMenu={() => onSelect(entry.id)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          onSelect(selected ? null : entry.id)
+          onSelect(entry.id)
         }
       }}
       className={cx(
         GRID,
         'h-[52px] cursor-default border-b border-line-soft text-[12.5px] transition-colors',
-        selected ? 'bg-info/10' : 'hover:bg-surface-2',
+        selected ? 'bg-info/20 shadow-[inset_2px_0_0_var(--color-info)]' : 'hover:bg-surface-2',
         p.paused && 'opacity-70',
       )}
     >
@@ -188,6 +223,7 @@ function Row({
           >
             <button
               type="button"
+              tabIndex={-1}
               disabled={folder.missing}
               onClick={(e) => {
                 e.stopPropagation()
@@ -222,18 +258,16 @@ function Row({
             </button>
           </Tip>
         ) : (
-          <span className="text-[11.5px] text-ink-faint/60">—</span>
+          <span className="text-[11.5px] text-ink-faint">—</span>
         )}
       </div>
 
       <div>
-        {entry.scope === 'lan' ? (
-          <Chip tone="held">Network</Chip>
-        ) : entry.scope === 'loopback' ? (
-          <Chip tone="neutral">Local</Chip>
-        ) : (
-          <Chip tone="neutral">Bound</Chip>
-        )}
+        <Tip content={SCOPE_HINT[entry.scope]}>
+          <span>
+            <Chip tone={entry.scope === 'lan' ? 'held' : 'neutral'}>{SCOPE_LABEL[entry.scope]}</Chip>
+          </span>
+        </Tip>
       </div>
 
       <span className={cx(WIDE_ONLY, 'font-mono text-[11.5px] tabular-nums text-ink-faint')}>
@@ -251,7 +285,7 @@ function Row({
       </span>
 
       <div
-        className="flex items-center justify-end gap-0.5"
+        className="-mr-2 flex items-center justify-end gap-1"
         onClick={(e) => e.stopPropagation()}
       >
         {busy ? (
@@ -276,19 +310,21 @@ function Row({
                 onClick={() =>
                   p.paused ? void actions.resume(entry) : void actions.pause(entry)
                 }
-                className={cx('btn btn-ghost px-1.5', p.paused && 'text-held')}
+                tabIndex={-1}
+                className={cx('btn btn-ghost size-7 p-0', p.paused && 'text-held')}
               >
                 {p.paused ? <Play size={13} /> : <Pause size={13} />}
               </button>
             </Tip>
 
-            <Tip content={p.protected ? 'Protected system process' : 'Stop'}>
+            <Tip content={p.protected ? 'Protected system process' : settings.confirmStop ? 'Stop…' : 'Stop'}>
               <button
                 type="button"
                 aria-label="Stop process"
                 disabled={!p.ownedByMe || p.protected}
+                tabIndex={-1}
                 onClick={() => actions.stop(entry)}
-                className="btn btn-ghost btn-danger px-1.5"
+                className="btn btn-ghost btn-danger size-7 p-0"
               >
                 <Square size={12} />
               </button>
@@ -298,73 +334,88 @@ function Row({
           </>
         )}
       </div>
-    </div>
+    </ContextMenu.Trigger>
+    <ContextMenu.Portal>
+      <ContextMenu.Positioner>
+        <ContextMenu.Popup className="popup min-w-[212px]">
+          {p.ownedByMe && !p.protected && (
+            <>
+              <Menu.Item
+                className="menu-item"
+                onClick={() => (p.paused ? void actions.resume(entry) : void actions.pause(entry))}
+              >
+                {p.paused ? <Play size={13} /> : <Pause size={13} />}
+                {p.paused ? 'Resume' : 'Pause'}
+              </Menu.Item>
+              <Menu.Item className="menu-item" onClick={() => actions.stop(entry)}>
+                <Square size={12} /> {settings.confirmStop ? 'Stop…' : 'Stop'}
+              </Menu.Item>
+              <Menu.Separator className="my-1 h-px bg-line" />
+            </>
+          )}
+          <PortMenuItems entry={entry} />
+        </ContextMenu.Popup>
+      </ContextMenu.Positioner>
+    </ContextMenu.Portal>
+    </ContextMenu.Root>
   )
 }
 
 function RowMenu({ entry }: { entry: PortEntry }) {
-  const actions = useActions()
-  const folder = folderFor(entry)
-
   return (
     <Menu.Root>
-      <Menu.Trigger aria-label="More actions" className="btn btn-ghost px-1.5">
+      <Menu.Trigger tabIndex={-1} aria-label="More actions" className="btn btn-ghost size-7 p-0">
         <MoreHorizontal size={13} />
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="end" sideOffset={6}>
           <Menu.Popup className="popup min-w-[212px]">
-            <Menu.Item
-              className="menu-item"
-              disabled={!folder}
-              onClick={() => void actions.reveal(entry)}
-            >
-              <FolderOpen size={13} /> Reveal in Finder
-            </Menu.Item>
-            <Menu.Item
-              className="menu-item"
-              disabled={!folder}
-              onClick={() => void actions.openTerminal(entry)}
-            >
-              <Terminal size={13} /> Open in Terminal
-            </Menu.Item>
-            <Menu.Item
-              className="menu-item"
-              disabled={!folder}
-              onClick={() => void actions.openEditor(entry)}
-            >
-              <Code2 size={13} /> Open in editor
-            </Menu.Item>
-            <Menu.Separator className="my-1 h-px bg-line" />
-            <Menu.Item
-              className="menu-item"
-              onClick={() => void actions.copy(String(entry.port), 'Port')}
-            >
-              <Copy size={13} /> Copy port
-            </Menu.Item>
-            <Menu.Item
-              className="menu-item"
-              onClick={() => void actions.copy(String(entry.pid), 'PID')}
-            >
-              <Copy size={13} /> Copy PID
-            </Menu.Item>
-            <Menu.Item
-              className="menu-item"
-              onClick={() => void actions.copy(entry.process.command, 'Command')}
-            >
-              <Copy size={13} /> Copy command
-            </Menu.Item>
-            {folder && (
-              <Menu.Item
-                className="menu-item"
-                onClick={() => void actions.copy(folder.path, 'Path')}
-              >
-                <Copy size={13} /> Copy folder path
-              </Menu.Item>
-            )}
+            <PortMenuItems entry={entry} />
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
     </Menu.Root>
+  )
+}
+
+/** The Finder, Terminal, editor and copy commands shared by the ⋯ menu and the right-click menu. */
+function PortMenuItems({ entry }: { entry: PortEntry }) {
+  const actions = useActions()
+  const folder = folderFor(entry)
+
+  return (
+    <>
+      {folder && !folder.missing && (
+        <>
+          <Menu.Item className="menu-item" onClick={() => void actions.reveal(entry)}>
+            <FolderOpen size={13} /> Show in Finder
+          </Menu.Item>
+          <Menu.Item className="menu-item" onClick={() => void actions.openTerminal(entry)}>
+            <Terminal size={13} /> Open in Terminal
+          </Menu.Item>
+          <Menu.Item className="menu-item" onClick={() => void actions.openEditor(entry)}>
+            <Code2 size={13} /> Open in Editor
+          </Menu.Item>
+          <Menu.Separator className="my-1 h-px bg-line" />
+        </>
+      )}
+      <Menu.Item className="menu-item" onClick={() => void actions.copy(String(entry.port), 'Port')}>
+        <Copy size={13} /> Copy Port
+      </Menu.Item>
+      <Menu.Item className="menu-item" onClick={() => void actions.copy(String(entry.pid), 'PID')}>
+        <Copy size={13} /> Copy PID
+      </Menu.Item>
+      <Menu.Item
+        className="menu-item"
+        onClick={() => void actions.copy(entry.process.command, 'Command')}
+      >
+        <Copy size={13} /> Copy Command
+      </Menu.Item>
+      {folder && (
+        <Menu.Item className="menu-item" onClick={() => void actions.copy(folder.path, 'Path')}>
+          <Copy size={13} /> Copy Folder Path
+        </Menu.Item>
+      )}
+    </>
   )
 }

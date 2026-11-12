@@ -6,6 +6,9 @@ pub mod storage;
 
 use std::path::PathBuf;
 
+use tauri::menu::{AboutMetadata, Menu, MenuBuilder, MenuItem, PredefinedMenuItem, SubmenuBuilder};
+use tauri::{AppHandle, Emitter, Runtime};
+
 use control::ControlResult;
 use ports::ScanResult;
 use storage::{CleanResult, DiskUsage, Measurement, Target};
@@ -119,9 +122,87 @@ async fn clean_target(id: String) -> Result<CleanResult, String> {
         .map_err(|e| format!("clean task failed: {e}"))?
 }
 
+const REPO: &str = "https://github.com/heisdeku/mare";
+
+/// The macOS menu bar. Standard items are the system's own; marè's commands carry
+/// ids that are forwarded to the window as `menu` events.
+fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let item = |id: &str, label: &str, accel: Option<&str>| {
+        MenuItem::with_id(app, id, label, true, accel)
+    };
+    let about = AboutMetadata {
+        website: Some(REPO.into()),
+        ..Default::default()
+    };
+
+    let app_menu = SubmenuBuilder::new(app, "marè")
+        .item(&PredefinedMenuItem::about(app, Some("About marè"), Some(about))?)
+        .separator()
+        .item(&item("settings", "Settings…", Some("CmdOrCtrl+,"))?)
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+    let edit = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .separator()
+        .item(&item("find", "Find…", Some("CmdOrCtrl+F"))?)
+        .item(&item("palette", "Go to…", Some("CmdOrCtrl+K"))?)
+        .build()?;
+    let view = SubmenuBuilder::new(app, "View")
+        .item(&item("ports", "Ports", Some("CmdOrCtrl+1"))?)
+        .item(&item("storage", "Storage", Some("CmdOrCtrl+2"))?)
+        .separator()
+        .item(&item("rescan", "Rescan", Some("CmdOrCtrl+R"))?)
+        .separator()
+        .fullscreen()
+        .build()?;
+    let window = SubmenuBuilder::new(app, "Window")
+        .minimize()
+        .maximize()
+        .separator()
+        .close_window()
+        .build()?;
+    let help = SubmenuBuilder::new(app, "Help")
+        .item(&item("help", "marè Help", None)?)
+        .separator()
+        .item(&item("issue", "Report an Issue…", None)?)
+        .build()?;
+
+    MenuBuilder::new(app)
+        .items(&[&app_menu, &edit, &view, &window, &help])
+        .build()
+}
+
+/// Opens help links in the browser and forwards every other menu id to the window.
+fn on_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    let url = match id {
+        "help" => format!("{REPO}#readme"),
+        "issue" => format!("{REPO}/issues/new"),
+        _ => {
+            let _ = app.emit("menu", id);
+            return;
+        }
+    };
+    let _ = std::process::Command::new("open").arg(url).spawn();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .menu(menu)
+        .on_menu_event(|app, event| on_menu(app, event.id().as_ref()))
         .invoke_handler(tauri::generate_handler![
             scan_ports,
             pause_process,

@@ -38,8 +38,8 @@ export const wellKnownName = (port: number): string | null =>
 
 export const SCOPE_LABEL: Record<PortScope, string> = {
   loopback: 'Local only',
-  lan: 'On your network',
-  specific: 'Bound address',
+  lan: 'Network',
+  specific: 'One address',
 }
 
 export const SCOPE_HINT: Record<PortScope, string> = {

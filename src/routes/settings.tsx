@@ -37,7 +37,7 @@ function SettingsPage() {
             disabled={isDefault}
             className="btn shrink-0"
           >
-            <RotateCcw size={12} /> Restore defaults
+            <RotateCcw size={12} /> Restore Defaults
           </button>
         </div>
 
