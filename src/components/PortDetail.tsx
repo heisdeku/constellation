@@ -8,6 +8,7 @@ import {
   Terminal,
   X,
 } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import type { PortEntry } from '~/lib/api'
 import {
   SCOPE_HINT,
@@ -35,12 +36,23 @@ export function PortDetail({
   const folder = folderFor(entry)
   const service = wellKnownName(entry.port)
   const args = commandArgs(p.command, p.exe)
+  const heading = useRef<HTMLDivElement>(null)
+
+  // Opening moves focus here; switching rows while open leaves it where it is.
+  useEffect(() => heading.current?.focus({ preventScroll: true }), [])
 
   return (
-    <aside className="flex h-full w-[340px] shrink-0 flex-col border-l border-line bg-surface">
+    <aside
+      aria-label={`Port ${entry.port}`}
+      className="flex h-full w-[340px] shrink-0 flex-col border-l border-line bg-surface"
+      style={{ viewTransitionName: 'port-panel' }}
+    >
       <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-4">
-        <div className="flex items-baseline gap-2">
-          <span className="font-mono text-[15px] font-semibold tabular-nums text-ink">
+        <div ref={heading} tabIndex={-1} className="flex items-baseline gap-2 outline-none">
+          <span
+            className="font-mono text-[15px] font-semibold tabular-nums text-ink"
+            style={{ viewTransitionName: `port-${entry.id}` }}
+          >
             {entry.port}
           </span>
           <span className="text-[10.5px] uppercase tracking-wider text-ink-faint">
@@ -61,7 +73,10 @@ export function PortDetail({
         <section className="border-b border-line px-4 py-3.5">
           <div className="flex items-center gap-2">
             <StateDot state={p.state} paused={p.paused} />
-            <span className="truncate text-[13.5px] font-semibold text-ink">
+            <span
+              className="truncate text-[13.5px] font-semibold text-ink"
+              style={{ viewTransitionName: `proc-${entry.id}` }}
+            >
               {entry.docker?.name ?? p.name}
             </span>
           </div>

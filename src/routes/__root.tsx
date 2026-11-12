@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Link, Outlet, createRootRoute, useLocation } from '@tanstack/react-router'
 import { Toast } from '@base-ui-components/react/toast'
 import { Tooltip } from '@base-ui-components/react/tooltip'
@@ -38,6 +39,21 @@ const NAV = [
 
 function TitleBar() {
   const { pathname } = useLocation()
+  const nav = useRef<HTMLElement>(null)
+  // One highlight that travels between tabs; it only animates once it has a place.
+  const [indicator, setIndicator] = useState<{ x: number; width: number; moved: boolean } | null>(
+    null,
+  )
+
+  useLayoutEffect(() => {
+    const active = nav.current?.querySelector<HTMLElement>('[data-status="active"]')
+    if (!active) return
+    setIndicator((prev) => ({
+      x: active.offsetLeft,
+      width: active.offsetWidth,
+      moved: prev !== null,
+    }))
+  }, [pathname])
 
   return (
     <header className="drag-region flex h-[42px] shrink-0 items-center gap-3 border-b border-line bg-surface pl-[80px] pr-3">
@@ -45,14 +61,25 @@ function TitleBar() {
         System Manager
       </span>
 
-      <nav className="no-drag flex items-center gap-0.5 rounded-lg bg-surface-2 p-0.5">
+      <nav
+        ref={nav}
+        className="no-drag relative flex items-center gap-0.5 rounded-lg bg-surface-2 p-0.5"
+      >
+        {indicator && (
+          <span
+            aria-hidden
+            className="absolute left-0 top-0.5 bottom-0.5 rounded-md bg-surface-3 motion-safe:data-[moved]:transition-[translate,width] motion-safe:data-[moved]:duration-300 motion-safe:data-[moved]:ease-[var(--ease-continuous)]"
+            data-moved={indicator.moved || undefined}
+            style={{ translate: `${indicator.x}px 0`, width: indicator.width }}
+          />
+        )}
         {NAV.map((item) => (
           <Link
             key={item.to}
             to={item.to}
-            className="rounded-md px-2.5 py-1 text-[12px] font-medium text-ink-faint transition-colors hover:text-ink-dim"
-            activeProps={{ className: 'bg-surface-3 !text-ink' }}
-            activeOptions={{ exact: item.to === '/' }}
+            className="relative rounded-md px-2.5 py-1 text-[12px] font-medium text-ink-faint transition-colors hover:text-ink-dim"
+            activeProps={{ className: '!text-ink' }}
+            activeOptions={{ exact: item.to === '/', includeSearch: false }}
           >
             {item.label}
           </Link>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { AlertDialog } from '@base-ui-components/react/alert-dialog'
 import { Checkbox } from '@base-ui-components/react/checkbox'
@@ -33,6 +33,7 @@ import {
 } from '~/lib/api'
 import { basename, formatAge, formatBytes, tildify } from '~/lib/format'
 import { useApp } from '~/lib/store'
+import { transitionName, useListMotion } from '~/lib/motion'
 import { useStorage } from '~/lib/storage'
 
 /** The same list, in the same order, as System Settings › General › Storage. */
@@ -68,6 +69,14 @@ const MIN_ROW_BYTES = 1_000_000
 const COLLAPSED_ROWS = 8
 /** Past this ratio, explain why the size shown is smaller than Finder or `du`. */
 const SHARED_HINT_RATIO = 1.5
+
+// The overview row and the category page share these names, so the row's label and
+// size carry into the page's title and total.
+const categoryLabel = (id: CategoryId) => `category-label-${id}`
+const categorySize = (id: CategoryId) => `category-size-${id}`
+// A folder's row and the page it opens share this, so its name grows into the title.
+const folderName = (path: string) => transitionName('folder', path)
+const targetKey = (target: StorageTarget) => target.id
 
 const SECTIONS: ReadonlyArray<{
   group: StorageGroup
@@ -115,6 +124,8 @@ function StoragePage() {
   const { category, path } = Route.useSearch()
   const { entries, home } = useApp()
   const [confirming, setConfirming] = useState(false)
+  /** Where the Clean button sits, relative to the window's centre, for the dialog to grow from. */
+  const [cleanFrom, setCleanFrom] = useState({ x: 0, y: 0 })
   const toast = useToast()
 
   // Scanning walks millions of files, so it waits until this page is opened, and
@@ -267,7 +278,14 @@ function StoragePage() {
             type="button"
             className="btn btn-accent"
             disabled={chosen.length === 0 || cleaning || scanning}
-            onClick={() => setConfirming(true)}
+            onClick={(e) => {
+              const box = e.currentTarget.getBoundingClientRect()
+              setCleanFrom({
+                x: box.left + box.width / 2 - window.innerWidth / 2,
+                y: box.top + box.height / 2 - window.innerHeight / 2,
+              })
+              setConfirming(true)
+            }}
           >
             {cleaning ? 'Cleaning…' : `Clean ${formatBytes(chosenBytes)}`}
           </button>
@@ -279,6 +297,7 @@ function StoragePage() {
         targets={chosen}
         bytes={chosenBytes}
         sizeOf={size}
+        from={cleanFrom}
         onClose={() => setConfirming(false)}
         onConfirm={() => void runClean()}
       />
@@ -405,10 +424,17 @@ function Overview({
               <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-surface-3 text-ink-dim">
                 <Icon size={14} />
               </span>
-              <span className="text-[12.5px] font-medium text-ink">{c.label}</span>
+              <span
+                className="text-[12.5px] font-medium text-ink"
+                style={{ viewTransitionName: categoryLabel(c.id) }}
+              >
+                {c.label}
+              </span>
               <span className={cx('ml-auto size-[7px] rounded-full', c.bar)} />
               <span className="w-[86px] text-right text-[12.5px] tabular-nums text-ink-dim">
-                {notes[c.id] ?? formatBytes(totals[c.id])}
+                <span style={{ viewTransitionName: categorySize(c.id) }}>
+                  {notes[c.id] ?? formatBytes(totals[c.id])}
+                </span>
               </span>
             </>
           )
@@ -424,6 +450,7 @@ function Overview({
               key={c.id}
               to="/storage"
               search={{ category: c.id }}
+              viewTransition
               className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2"
             >
               {content}
@@ -464,7 +491,12 @@ function CategoryView({
   const navigate = useNavigate({ from: Route.fullPath })
   const info = CATEGORIES.find((c) => c.id === category)
 
-  const open = (next: string) => void navigate({ search: { category, path: next } })
+  const open = (next: string) =>
+    void navigate({ search: { category, path: next }, viewTransition: true })
+
+  // A new page puts focus on its title, so the keyboard and screen readers start there.
+  const title = useRef<HTMLHeadingElement>(null)
+  useEffect(() => title.current?.focus({ preventScroll: true }), [category, path])
 
   const backTo = () => {
     if (!path) return {}
@@ -482,16 +514,25 @@ function CategoryView({
         <Link
           to="/storage"
           search={backTo()}
+          viewTransition
           className="mb-2 inline-flex items-center gap-1 text-[11.5px] font-medium text-ink-faint transition-colors hover:text-ink-dim"
         >
           <ChevronLeft size={12} /> Back
         </Link>
         <div className="flex items-baseline justify-between gap-4">
-          <h1 className="min-w-0 truncate text-[17px] font-semibold tracking-tight text-ink">
+          <h1
+            ref={title}
+            tabIndex={-1}
+            className="min-w-0 truncate text-[17px] font-semibold tracking-tight text-ink outline-none"
+            style={{ viewTransitionName: path ? folderName(path) : categoryLabel(category) }}
+          >
             {path ? basename(path) : info?.label}
           </h1>
           {!path && (
-            <span className="shrink-0 text-[13px] font-medium tabular-nums text-ink-dim">
+            <span
+              className="shrink-0 text-[13px] font-medium tabular-nums text-ink-dim"
+              style={{ viewTransitionName: categorySize(category) }}
+            >
               {formatBytes(total)}
             </span>
           )}
@@ -500,6 +541,7 @@ function CategoryView({
 
       {path ? (
         <GroupSection
+          key={path}
           title="Largest items"
           hint="Moved to the Trash, so you can put them back."
           targets={items ?? []}
@@ -547,6 +589,10 @@ function GroupSection({
       (a, b) =>
         shownBytes(b, measurements.get(b.id)) - shownBytes(a, measurements.get(a.id)),
     )
+  const shown = expanded ? rows : rows.slice(0, COLLAPSED_ROWS)
+  // Cleaned rows fade out where they were and the rest close the gap; rows that
+  // appear, from "Show all" or a folder finishing its scan, fade in one after another.
+  const motion = useListMotion(shown, targetKey)
 
   if (loading) {
     return <Empty icon={<HardDrive size={24} />} title="Looking inside…" body="Measuring each item." />
@@ -563,7 +609,6 @@ function GroupSection({
   if (rows.length === 0) return null
 
   const total = rows.reduce((sum, t) => sum + shownBytes(t, measurements.get(t.id)), 0)
-  const shown = expanded ? rows : rows.slice(0, COLLAPSED_ROWS)
 
   return (
     <section className="mb-6">
@@ -578,11 +623,15 @@ function GroupSection({
           {formatBytes(total)}
         </span>
       </div>
-      <div className="divide-y divide-line-soft rounded-card border border-line bg-surface">
-        {shown.map((target) => (
+      <div
+        ref={motion.ref}
+        className="relative divide-y divide-line-soft rounded-card border border-line bg-surface"
+      >
+        {motion.items.map(({ item: target, leaving }) => (
           <Row
             key={target.id}
             target={target}
+            leaving={leaving}
             measurement={measurements.get(target.id)}
             checked={selected.has(target.id)}
             enabled={selectable(target)}
@@ -608,6 +657,7 @@ function GroupSection({
 
 function Row({
   target,
+  leaving,
   measurement,
   checked,
   enabled,
@@ -617,6 +667,7 @@ function Row({
   onOpen,
 }: {
   target: StorageTarget
+  leaving: boolean
   measurement: Measurement | undefined
   checked: boolean
   enabled: boolean
@@ -636,7 +687,15 @@ function Row({
 
   const name = (
     <>
-      <span className="truncate text-[12.5px] font-medium text-ink">{target.label}</span>
+      <span
+        className="truncate text-[12.5px] font-medium text-ink"
+        style={{
+          viewTransitionName:
+            target.browsable && !leaving ? folderName(target.path) : undefined,
+        }}
+      >
+        {target.label}
+      </span>
       {target.disposal === 'trash' ? (
         <Chip tone="info">Trash</Chip>
       ) : (
@@ -647,7 +706,12 @@ function Row({
   )
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5">
+    <div
+      data-motion-key={target.id}
+      data-leaving={leaving || undefined}
+      inert={leaving}
+      className="flex items-center gap-3 px-4 py-2.5"
+    >
       {target.disposal !== 'none' && (
         <Checkbox.Root
           checked={checked && enabled}
@@ -741,6 +805,7 @@ function ConfirmClean({
   targets,
   bytes,
   sizeOf,
+  from,
   onClose,
   onConfirm,
 }: {
@@ -748,6 +813,7 @@ function ConfirmClean({
   targets: StorageTarget[]
   bytes: number
   sizeOf: (target: StorageTarget) => number
+  from: { x: number; y: number }
   onClose: () => void
   onConfirm: () => void
 }) {
@@ -768,7 +834,10 @@ function ConfirmClean({
     <AlertDialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
       <AlertDialog.Portal>
         <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px] transition-opacity duration-150 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
-        <AlertDialog.Popup className="popup fixed left-1/2 top-1/2 z-50 w-[460px] -translate-x-1/2 -translate-y-1/2 p-5">
+        <AlertDialog.Popup
+          className="popup grow-from fixed left-1/2 top-1/2 z-50 w-[460px] -translate-x-1/2 -translate-y-1/2 p-5"
+          style={{ '--from-x': `${from.x}px`, '--from-y': `${from.y}px` } as React.CSSProperties}
+        >
           <AlertDialog.Title className="flex items-center gap-2 text-[14px] font-semibold text-ink">
             <HardDrive size={15} className="text-ink-faint" />
             {wording().title}

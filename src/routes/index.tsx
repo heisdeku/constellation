@@ -37,8 +37,17 @@ function PortsPage() {
   const { entries, settings, initialising, error, warnings } = useApp()
   const searchRef = useRef<HTMLInputElement>(null)
 
-  const setSearch = (patch: Partial<PortsSearch>) =>
-    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
+  const setSearch = (patch: Partial<PortsSearch>, viewTransition = false) =>
+    navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, viewTransition })
+
+  const select = (sel: string | null) => void setSearch({ sel: sel ?? undefined }, true)
+
+  // Focus goes back to the row that opened the panel, so the keyboard picks up there.
+  const closeDetail = async () => {
+    const id = search.sel
+    await setSearch({ sel: undefined }, true)
+    if (id) document.querySelector<HTMLElement>(`[data-motion-key="${CSS.escape(id)}"]`)?.focus()
+  }
 
   const visible = useMemo(
     () => filterAndSort(entries, search, settings.hideSystem),
@@ -180,7 +189,7 @@ function PortsPage() {
               <PortsTable
                 entries={visible}
                 selectedId={search.sel ?? null}
-                onSelect={(sel) => setSearch({ sel: sel ?? undefined })}
+                onSelect={select}
                 sort={search.sort}
                 dir={search.dir}
                 onSort={onSort}
@@ -198,7 +207,7 @@ function PortsPage() {
         </div>
 
         {selected && (
-          <PortDetail entry={selected} onClose={() => setSearch({ sel: undefined })} />
+          <PortDetail entry={selected} onClose={() => void closeDetail()} />
         )}
       </div>
     </ActionsProvider>

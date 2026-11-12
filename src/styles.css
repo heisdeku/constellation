@@ -23,6 +23,9 @@
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
 
   --radius-card: 0.75rem;
+
+  /* Fast start, long settle: for anything that opens, closes or moves between states. */
+  --ease-continuous: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @layer base {
@@ -172,11 +175,72 @@
   animation: pulse-ring 2.4s ease-out infinite;
 }
 
+/* Shared elements named with view-transition-name morph from one state into the next. */
+::view-transition-group(*) {
+  animation-duration: 300ms;
+  animation-timing-function: var(--ease-continuous);
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+}
+
+/* The port panel slides in from the table's edge, and back out when closed. */
+@keyframes panel-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes panel-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+::view-transition-new(port-panel):only-child {
+  animation: panel-in 280ms var(--ease-continuous);
+}
+::view-transition-old(port-panel):only-child {
+  animation: panel-out 280ms var(--ease-continuous);
+}
+
+/* A dialog that grows out of the button that opened it. Set --from-x and --from-y to
+   the button's offset from the centre of the window. */
+.grow-from {
+  transition:
+    opacity 250ms var(--ease-continuous),
+    scale 250ms var(--ease-continuous),
+    translate 250ms var(--ease-continuous);
+}
+.grow-from[data-starting-style],
+.grow-from[data-ending-style] {
+  translate: calc(-50% + var(--from-x, 0px)) calc(-50% + var(--from-y, 0px));
+  scale: 0.2;
+  opacity: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .live-dot {
     animation: none;
   }
   .popup {
     transition: none;
+  }
+  .grow-from {
+    transition: opacity 150ms ease-out;
+  }
+  .grow-from[data-starting-style],
+  .grow-from[data-ending-style] {
+    translate: -50% -50%;
+    scale: 1;
+  }
+  /* Keep the change of state as a short cross-fade; drop the movement. */
+  ::view-transition-group(*),
+  ::view-transition-new(port-panel):only-child,
+  ::view-transition-old(port-panel):only-child {
+    animation-duration: 0s;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 150ms;
   }
 }

@@ -15,10 +15,13 @@ import {
 } from 'lucide-react'
 import type { PortEntry } from '~/lib/api'
 import { folderFor, tildify, wellKnownName } from '~/lib/format'
+import { useListMotion } from '~/lib/motion'
 import { useApp } from '~/lib/store'
 import { useActions } from './actions'
 import { Chip, StateDot, Tip, cx } from './ui'
 import type { SortDir, SortKey } from '~/lib/filter'
+
+const entryKey = (entry: PortEntry) => entry.id
 
 const GRID =
   'grid grid-cols-[86px_minmax(0,1.5fr)_minmax(0,1.35fr)_104px_66px_60px_96px] items-center gap-3 px-4'
@@ -38,6 +41,9 @@ export function PortsTable({
   dir: SortDir
   onSort: (key: SortKey) => void
 }) {
+  // Rescans land every few seconds; rows slide to their new place instead of jumping.
+  const motion = useListMotion(entries, entryKey)
+
   return (
     <div className="flex h-full flex-col">
       <div
@@ -55,12 +61,13 @@ export function PortsTable({
         <span className="text-right">Actions</span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {entries.map((entry) => (
+      <div ref={motion.ref} className="relative min-h-0 flex-1 overflow-y-auto">
+        {motion.items.map(({ item: entry, leaving }) => (
           <Row
             key={entry.id}
             entry={entry}
             selected={entry.id === selectedId}
+            leaving={leaving}
             onSelect={onSelect}
           />
         ))}
@@ -102,10 +109,12 @@ function SortHeader({
 function Row({
   entry,
   selected,
+  leaving,
   onSelect,
 }: {
   entry: PortEntry
   selected: boolean
+  leaving: boolean
   onSelect: (id: string | null) => void
 }) {
   const { home } = useApp()
@@ -115,9 +124,14 @@ function Row({
   const folder = folderFor(entry)
   const service = wellKnownName(entry.port)
   const label = entry.docker?.name ?? p.name
+  // While a row's panel is open, the panel carries these names instead.
+  const shared = !selected && !leaving
 
   return (
     <div
+      data-motion-key={entry.id}
+      data-leaving={leaving || undefined}
+      inert={leaving}
       role="button"
       tabIndex={0}
       onClick={() => onSelect(selected ? null : entry.id)}
@@ -136,7 +150,10 @@ function Row({
     >
       {/* Port */}
       <div className="flex flex-col">
-        <span className="font-mono text-[14px] font-semibold tabular-nums text-ink">
+        <span
+          className="w-fit font-mono text-[14px] font-semibold tabular-nums text-ink"
+          style={{ viewTransitionName: shared ? `port-${entry.id}` : undefined }}
+        >
           {entry.port}
         </span>
         <span className="text-[10px] uppercase tracking-wide text-ink-faint">
@@ -148,7 +165,12 @@ function Row({
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
           <StateDot state={p.state} paused={p.paused} />
-          <span className="truncate font-medium text-ink">{label}</span>
+          <span
+            className="truncate font-medium text-ink"
+            style={{ viewTransitionName: shared ? `proc-${entry.id}` : undefined }}
+          >
+            {label}
+          </span>
           {p.paused && <Chip tone="held">Paused</Chip>}
           {entry.docker && <Chip tone="info">Docker</Chip>}
         </div>
