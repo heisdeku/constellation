@@ -1,8 +1,3 @@
-//! Measures the real disk. Read-only: this file must never call `storage::clean`.
-//!
-//! Ignored by default because it walks every project folder, which takes minutes:
-//! `cargo test --test live_storage -- --ignored --nocapture`
-
 use std::path::PathBuf;
 use std::sync::Mutex;
 

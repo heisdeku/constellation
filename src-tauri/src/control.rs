@@ -1,9 +1,3 @@
-//! Pausing, resuming and stopping the process behind a port, plus the Finder /
-//! terminal / editor jump-offs.
-//!
-//! Every signal goes through [`guard`], which refuses anything that would take the
-//! machine or the app itself down.
-
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -13,9 +7,8 @@ use crate::proc::{self, ProcessInfo};
 use crate::sh;
 
 const OPEN_TIMEOUT: Duration = Duration::from_millis(4000);
-/// Editors tried in order for "Open in editor", by bundle identifier.
 const EDITOR_BUNDLES: &[&str] = &[
-    "com.todesktop.230313mzl4w4u92", // Cursor
+    "com.todesktop.230313mzl4w4u92",
     "com.microsoft.VSCode",
     "dev.zed.Zed",
     "com.sublimetext.4",
@@ -25,23 +18,17 @@ const EDITOR_BUNDLES: &[&str] = &[
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ControlResult {
-    /// True when the process is gone after the operation.
     pub exited: bool,
-    /// True when SIGTERM was ignored and we had to escalate to SIGKILL.
     pub escalated: bool,
-    /// Fresh state, so the UI can update without waiting for the next scan.
     pub process: Option<ProcessInfo>,
-    /// Plain-language summary for the toast.
     pub message: String,
 }
 
 fn alive(pid: i32) -> bool {
-    // signal 0 performs the permission and existence checks without delivering anything.
     let rc = unsafe { libc::kill(pid, 0) };
     if rc == 0 {
         return true;
     }
-    // EPERM means it exists but belongs to somebody else.
     std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
@@ -147,8 +134,6 @@ pub fn stop(
         let _ = send(pid, libc::SIGCONT);
     }
 
-    // Losing the race to a process that exits on its own is the outcome we wanted,
-    // not an error worth showing.
     if let Err(e) = send(pid, libc::SIGTERM) {
         if !alive(pid) {
             return Ok(ControlResult {

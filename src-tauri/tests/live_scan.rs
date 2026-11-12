@@ -1,8 +1,3 @@
-//! Exercises the real scanner against this machine.
-//!
-//! The unit tests cover parsing with fixed samples; this checks the whole pipeline —
-//! lsof, ps, cwd resolution and project detection — against live system state.
-
 use mare_lib::ports;
 
 #[test]
@@ -33,7 +28,6 @@ fn scans_real_listening_ports() {
         );
     }
 
-    // IPv4 and IPv6 bindings of the same port must collapse into a single row.
     let mut ids: Vec<_> = result.entries.iter().map(|e| e.id.clone()).collect();
     let before = ids.len();
     ids.sort();

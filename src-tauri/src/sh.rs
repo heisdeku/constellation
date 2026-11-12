@@ -1,8 +1,3 @@
-//! Thin wrapper around `std::process::Command` that never lets the UI hang.
-//!
-//! `lsof` in particular can block indefinitely on stale network mounts, so every
-//! external command we run gets a hard deadline and is killed if it overruns.
-
 use std::io::Read;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -28,8 +23,6 @@ pub fn run(program: &str, args: &[&str], timeout: Duration) -> Result<String, St
         .take()
         .ok_or_else(|| format!("`{program}` produced no stdout pipe"))?;
 
-    // Drain the pipe on a worker thread: a child writing more than the pipe buffer
-    // would deadlock if we waited on exit before reading.
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let mut buf = Vec::new();

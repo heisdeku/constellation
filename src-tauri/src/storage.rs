@@ -1,16 +1,3 @@
-//! Finding what fills the disk, and clearing the parts that are safe to clear.
-//!
-//! Two rules keep this honest:
-//!
-//! - **Sizes are what deleting would free, not what `du` says.** APFS clones share
-//!   blocks, so 69 copies of Chrome read as 118 GB and occupy under 5 GB. See [`Tally`].
-//! - **The UI never sends a path to delete.** It sends a target id, which [`find`]
-//!   resolves and validates here. [`entries`] is the one list both measuring and
-//!   cleaning walk, so what was measured is exactly what gets removed.
-//!
-//! Anything rebuildable is deleted outright. Your own apps and files can't come back
-//! from a reinstall, so those go to the Trash instead.
-
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::fs::{self, Metadata};
@@ -28,19 +15,12 @@ const DATA_VOLUME: &str = "/System/Volumes/Data";
 const SIMCTL_TIMEOUT: Duration = Duration::from_secs(120);
 const FINDER_TIMEOUT: Duration = Duration::from_secs(30);
 const PS_TIMEOUT: Duration = Duration::from_secs(4);
-/// Volumes that together hold macOS itself, separate from the Data volume.
 const SYSTEM_VOLUMES: &[&str] = &["/", "/System/Volumes/Preboot"];
 const APPLICATIONS: &str = "/Applications";
-/// Never trash the app doing the trashing.
 const OWN_BUNDLE: &str = "marè.app";
-/// Package-style libraries: their insides belong to the owning app, and removing a
-/// file from one corrupts it. Git history is lost the same way.
 const OPAQUE_SUFFIXES: &[&str] = &[".photoslibrary", ".musiclibrary", ".tvlibrary", ".git"];
-/// Home folders holding your own files, shown under Documents and browsable.
 const FILE_FOLDERS: &[&str] = &["Documents", "Downloads", "Desktop", "Movies", "Music"];
 const ICLOUD_FOLDER: &str = "Library/Mobile Documents";
-/// Home folders macOS guards one by one: reading any of them without Full Disk Access
-/// stops the scan for a prompt. A scan without access leaves them out.
 const GUARDED: &[&str] = &[
     "Desktop",
     "Documents",
@@ -52,20 +32,14 @@ const GUARDED: &[&str] = &[
     "Library/Messages",
     ".Trash",
 ];
-/// Readable only with Full Disk Access, and a refused read shows no prompt.
 const ACCESS_PROBE: &str = "/Library/Application Support/com.apple.TCC/TCC.db";
 const PRIVACY_SETTINGS: &str =
     "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles";
 const OPEN_TIMEOUT: Duration = Duration::from_secs(4);
-/// Temp files younger than this may belong to something still running.
 const TEMP_MIN_AGE: Duration = Duration::from_secs(3 * 24 * 60 * 60);
 
-/// Where projects usually live. Fixed rather than the whole home folder, because
-/// walking Desktop, Documents or Downloads makes macOS prompt for each of them.
 const PROJECT_ROOTS: &[&str] = &["dev", "code", "projects", "src", "repos", "work", "Developer"];
 
-/// Build output worth offering, each with the files that prove it really is build
-/// output. A folder called `build` or `target` with neither nearby is left alone.
 const ARTIFACTS: &[(&str, &[&str])] = &[
     ("node_modules", &["package.json"]),
     (".next", &["package.json"]),
@@ -76,21 +50,16 @@ const ARTIFACTS: &[(&str, &[&str])] = &[
     (".gradle", &["settings.gradle", "settings.gradle.kts", "build.gradle", "build.gradle.kts"]),
 ];
 
-/// `st_flags` bits that make unlink fail for everyone, root included. System Integrity
-/// Protection marks its folders with `sunlnk`, so asking would only ever produce an error.
-const UNDELETABLE: u32 = libc::UF_IMMUTABLE | libc::SF_IMMUTABLE | 0x0010_0000; // SF_NOUNLINK
+const SF_NOUNLINK: u32 = 0x0010_0000;
+const UNDELETABLE: u32 = libc::UF_IMMUTABLE | libc::SF_IMMUTABLE | SF_NOUNLINK;
 
-/// Regenerated folders that Electron apps keep in Application Support.
 const ELECTRON_CACHES: &[&str] = &["Cache", "Code Cache", "GPUCache", "CachedData", "DawnCache"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Safety {
-    /// Rebuilt automatically; the only cost is a slower next launch or install.
     Safe,
-    /// Removable, but you may lose something or have to rebuild it by hand.
     Review,
-    /// Shown so the space is accounted for. Never deleted.
     Keep,
 }
 
@@ -112,11 +81,8 @@ pub enum Group {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Disposal {
-    /// Gone for good. Used only for what rebuilds itself.
     Delete,
-    /// Recoverable, but frees nothing until the Trash is emptied.
     Trash,
-    /// Can't be removed from here.
     None,
 }
 
@@ -126,25 +92,19 @@ pub struct Target {
     pub id: String,
     pub group: Group,
     pub label: String,
-    /// What this is and what removing it costs.
     pub detail: String,
     pub path: String,
     pub safety: Safety,
     pub disposal: Disposal,
-    /// True when the UI can open this to list what's inside.
     pub browsable: bool,
-    /// Project folders only: when the folder last changed, to spot abandoned projects.
     pub modified_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Measurement {
-    /// What `du` would report.
     pub apparent_bytes: u64,
-    /// What deleting this would actually return to the disk.
     pub reclaimable_bytes: u64,
-    /// Entries macOS refused to show us, usually for want of Full Disk Access.
     pub unreadable: u64,
 }
 
@@ -153,7 +113,6 @@ pub struct Measurement {
 pub struct DiskUsage {
     pub total_bytes: u64,
     pub free_bytes: u64,
-    /// Space macOS itself occupies, outside the Data volume.
     pub system_bytes: u64,
 }
 
@@ -161,24 +120,17 @@ pub struct DiskUsage {
 #[serde(rename_all = "camelCase")]
 pub struct CleanResult {
     pub removed: u64,
-    /// Entries macOS refused to let go of. Retrying can't help, so these aren't failures.
     pub protected_items: u64,
     pub failures: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Cleanup {
-    /// Empty the folder but keep it, since its owner may hold it open.
     Contents,
-    /// Remove the folder itself.
     Whole,
-    /// Empty the folder, sparing anything that may still be in use.
     Stale,
-    /// Remove all children except the most recent, which a running app may be using.
     AllButNewest,
-    /// Hand over to the owning tool, which knows its own bookkeeping.
     Command(&'static [&'static str]),
-    /// Move the path itself to the Trash, through Finder so Put Back works.
     Trash,
     Nothing,
 }
@@ -666,7 +618,6 @@ fn entries(plan: &Plan) -> Result<Vec<PathBuf>, String> {
     })
 }
 
-/// What APFS says about a file's data stream. Not available on other filesystems.
 struct CloneInfo {
     id: u64,
     references: u32,
@@ -681,7 +632,6 @@ fn clone_info(path: &Path) -> Option<CloneInfo> {
     const FSOPT_ATTR_CMN_EXTENDED: u32 = 0x0000_0020;
     const WANTED: u32 = ATTR_CMNEXT_PRIVATESIZE | ATTR_CMNEXT_CLONEID | ATTR_CMNEXT_CLONE_REFCNT;
 
-    // getattrlist packs results on 4-byte boundaries, ordered by attribute bit.
     #[repr(C, packed(4))]
     #[derive(Default)]
     struct Reply {
@@ -708,8 +658,6 @@ fn clone_info(path: &Path) -> Option<CloneInfo> {
             FSOPT_NOFOLLOW | FSOPT_ATTR_CMN_EXTENDED,
         )
     };
-    // Field offsets only hold when the kernel returned all three. `returned` is an
-    // attribute_set_t: common, volume, directory, file, then the fork attributes.
     let returned = reply.returned;
     if rc != 0 || returned[4] & WANTED != WANTED {
         return None;
@@ -729,12 +677,6 @@ struct SharedStream {
     private_bytes: u64,
 }
 
-/// Sizes a set of files by what removing the whole set would free.
-///
-/// A block only comes back once nothing references it, so a hard link or clone counts
-/// in full if every reference falls inside the set, and otherwise only for the bytes
-/// private to it. Sharing between two different targets isn't visible from here, so
-/// totals err on the low side, which is the direction a promise should err.
 #[derive(Default)]
 struct Tally {
     apparent: u64,
@@ -776,15 +718,12 @@ impl Tally {
     fn walk(&mut self, root: &Path) {
         let top = match fs::symlink_metadata(root) {
             Ok(top) => top,
-            // Already gone, say just after being cleaned: that's zero, not a mystery.
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
             Err(_) => {
                 self.unreadable += 1;
                 return;
             }
         };
-        // Stay on one volume: a disk image or simulator runtime mounted inside isn't
-        // something removing this folder would free.
         let device = top.dev();
         let mut stack = vec![(root.to_path_buf(), top)];
         while let Some((path, meta)) = stack.pop() {
@@ -826,8 +765,6 @@ impl Tally {
 pub fn measure(id: &str, home: &Path) -> Result<Measurement, String> {
     let plan = find(id, home)?;
     let mut tally = Tally::default();
-    // macOS shuts even its owner out of some of its own caches. That's a size we
-    // can't know, not a failed scan.
     match entries(&plan) {
         Ok(paths) => paths.iter().for_each(|path| tally.walk(path)),
         Err(_) => tally.unreadable += 1,
@@ -850,7 +787,6 @@ fn confirm_location(plan: &Plan, home: &Path) -> Result<(), String> {
     let expected = parent.canonicalize().map_err(|e| e.to_string())?;
     let name_matches = real.file_name() == path.file_name();
 
-    // The per-user temp area sits outside home, which is why it's a second root.
     let temp_root = std::env::temp_dir().parent().and_then(|p| p.canonicalize().ok());
     let inside = real.starts_with(home.canonicalize().map_err(|e| e.to_string())?)
         || real.starts_with(APPLICATIONS)
@@ -1005,7 +941,6 @@ mod tests {
     use super::*;
     use std::process::Command;
 
-    /// A throwaway home folder. Real paths are never touched by these tests.
     struct Sandbox(PathBuf);
 
     impl Sandbox {
@@ -1021,7 +956,6 @@ mod tests {
             let full = self.0.join(path);
             fs::create_dir_all(full.parent().unwrap()).unwrap();
             fs::write(&full, vec![7u8; bytes]).unwrap();
-            // APFS allocates lazily, so sizes aren't settled until the data is on disk.
             fs::File::open(&full).unwrap().sync_all().unwrap();
             full
         }

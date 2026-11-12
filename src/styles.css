@@ -1,8 +1,6 @@
 @import 'tailwindcss';
 
 @theme {
-  /* Neutral graphite: the window and sidebar are canvas, each page sits on a
-     slightly lighter surface pane, and cards and hovers step up from there. */
   --color-canvas: #121214;
   --color-surface: #19191c;
   --color-surface-2: #202024;
@@ -26,7 +24,6 @@
 
   --radius-card: 0.75rem;
 
-  /* Fast start, long settle: for anything that opens, closes or moves between states. */
   --ease-continuous: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
@@ -49,13 +46,11 @@
     font-size: 13px;
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
-    /* This is a desktop window, not a document — no rubber-band, no text drag. */
     overscroll-behavior: none;
     user-select: none;
     cursor: default;
   }
 
-  /* Selection is opt-in, on the things worth copying. */
   .selectable,
   input {
     user-select: text;
@@ -109,7 +104,6 @@
     @apply border-danger/40 bg-danger/10 text-danger;
   }
 
-  /* The one main action on a page. */
   .btn-primary {
     @apply border-transparent bg-ink text-canvas;
   }
@@ -124,8 +118,6 @@
     @apply border-live/50 bg-live/20 text-live;
   }
 
-  /* Tailwind v4 drives scale/translate as their own CSS properties, not `transform`,
-     so the transition must name them explicitly or the popup pops in. */
   .popup {
     @apply z-50 scale-100 rounded-lg border border-line bg-surface-2 p-1 opacity-100
       shadow-2xl shadow-black/60 outline-none
@@ -162,7 +154,6 @@
   }
 }
 
-/* The whole titlebar strip drags the window; interactive children opt out. */
 .drag-region {
   -webkit-app-region: drag;
 }
@@ -185,7 +176,6 @@
   animation: pulse-ring 2.4s ease-out infinite;
 }
 
-/* Shared elements named with view-transition-name morph from one state into the next. */
 ::view-transition-group(*) {
   animation-duration: 300ms;
   animation-timing-function: var(--ease-continuous);
@@ -195,14 +185,10 @@
   animation-duration: 180ms;
 }
 
-/* The sidebar highlight moves above the page while it slides, so it blends rather than
-   hiding the link text it passes over. */
 ::view-transition-group(nav-highlight) {
   mix-blend-mode: lighten;
 }
 
-/* The ports table takes its new width at once; cross-fading the wide and narrow
-   layouts doubled every label. The sliding panel covers the change. */
 ::view-transition-group(ports-main),
 ::view-transition-new(ports-main) {
   animation: none;
@@ -211,7 +197,6 @@
   display: none;
 }
 
-/* The port panel slides in from the table's edge, and back out when closed. */
 @keyframes panel-in {
   from {
     transform: translateX(100%);
@@ -229,8 +214,6 @@
   animation: panel-out 280ms var(--ease-continuous);
 }
 
-/* A dialog that grows out of the button that opened it. Set --from-x and --from-y to
-   the button's offset from the centre of the window. */
 .grow-from {
   transition:
     opacity 250ms var(--ease-continuous),
@@ -259,7 +242,6 @@
     translate: -50% -50%;
     scale: 1;
   }
-  /* Keep the change of state as a short cross-fade; drop the movement. */
   ::view-transition-group(*),
   ::view-transition-new(port-panel):only-child,
   ::view-transition-old(port-panel):only-child {

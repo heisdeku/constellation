@@ -12,7 +12,6 @@ use storage::{CleanResult, DiskUsage, Measurement, Target};
 
 #[tauri::command]
 async fn scan_ports(include_udp: bool) -> Result<ScanResult, String> {
-    // lsof/ps are blocking; keep them off the main thread so the window stays responsive.
     tauri::async_runtime::spawn_blocking(move || ports::scan(include_udp))
         .await
         .map_err(|e| format!("scan task failed: {e}"))?
