@@ -37,7 +37,8 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "10.15",
+      "signingIdentity": "-"
     },
     "category": "DeveloperTool",
     "shortDescription": "See what is running on your Mac and what is filling its disk.",

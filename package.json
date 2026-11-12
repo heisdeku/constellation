@@ -3,6 +3,8 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@11.8.0",
   "description": "See what is running on your Mac and what is filling its disk.",
   "scripts": {
     "dev": "vite",
