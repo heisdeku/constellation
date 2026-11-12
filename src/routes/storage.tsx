@@ -10,12 +10,14 @@ import {
   FolderSearch,
   HardDrive,
   RefreshCw,
+  ShieldCheck,
 } from 'lucide-react'
 import { useToast } from '~/components/Toaster'
 import { Chip, Empty, Tip, cx } from '~/components/ui'
 import {
   errorMessage,
   openPath,
+  openPrivacySettings,
   revealInFinder,
   type DiskUsage,
   type Measurement,
@@ -106,12 +108,28 @@ function StoragePage() {
   /** Where the Clean button sits, relative to the window's centre, for the dialog to grow from. */
   const [cleanFrom, setCleanFrom] = useState({ x: 0, y: 0 })
   const toast = useToast()
+  const failed = (title: string) => (e: unknown) =>
+    toast.add({ title, description: errorMessage(e), type: 'error' })
+  const askAccess = storage.access === 'missing' && !storage.limited && !storage.needsScan
 
   // Scanning walks millions of files, so it waits until this page is opened, and
   // the result is kept when you navigate away and back.
   useEffect(() => {
-    if (targets.length === 0) void scan()
-  }, [targets.length, scan])
+    if (storage.needsScan && !scanning) void scan()
+  }, [storage.needsScan, scanning, scan])
+
+  // Access is granted in System Settings, outside the app, so check again while it's
+  // missing: on return to the window, and every couple of seconds while waiting.
+  useEffect(() => {
+    if (storage.access !== 'missing') return
+    const check = () => void storage.checkAccess()
+    const timer = setInterval(check, 2000)
+    window.addEventListener('focus', check)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', check)
+    }
+  }, [storage.access, storage.checkAccess])
 
   useEffect(() => {
     if (path && !browsed.has(path)) void browse(path)
@@ -191,7 +209,7 @@ function StoragePage() {
   }
 
   const totals = categoryTotals(disk, targets, measurements)
-  const notes = categoryNotes(targets, measurements, scanning)
+  const notes = categoryNotes(targets, measurements, scanning, storage.limited)
 
   return (
     <div className="flex h-full flex-col">
@@ -204,7 +222,23 @@ function StoragePage() {
             </div>
           )}
 
-          {unreadable > 0 && !scanning && (
+          {storage.limited && (
+            <div className="mb-4 flex items-center justify-between gap-4 rounded-md border border-held/20 bg-held/10 px-3 py-2 text-[11.5px] leading-relaxed text-held">
+              <span>
+                Scanned without Full Disk Access, so Desktop, Documents, Downloads, iCloud
+                Drive, Messages and Photos are left out.
+              </span>
+              <button
+                type="button"
+                className="btn shrink-0 py-1"
+                onClick={() => void openPrivacySettings().catch(failed('Could not open System Settings'))}
+              >
+                Allow access
+              </button>
+            </div>
+          )}
+
+          {unreadable > 0 && !scanning && !storage.limited && (
             <p className="mb-4 rounded-md border border-held/20 bg-held/10 px-3 py-2 text-[11.5px] leading-relaxed text-held">
               macOS kept {unreadable.toLocaleString()} items private, so some sizes are
               low. Give marè Full Disk Access in System Settings › Privacy &amp;
@@ -212,7 +246,14 @@ function StoragePage() {
             </p>
           )}
 
-          {category ? (
+          {storage.access === 'checking' ? null : askAccess ? (
+            <AccessRequest
+              onOpen={() =>
+                void openPrivacySettings().catch(failed('Could not open System Settings'))
+              }
+              onSkip={storage.scanWithoutAccess}
+            />
+          ) : category ? (
             <CategoryView
               category={category}
               path={path}
@@ -239,38 +280,40 @@ function StoragePage() {
         </div>
       </div>
 
-      <footer className="flex h-12 shrink-0 items-center gap-3 border-t border-line px-6">
-        <span className="text-[11.5px] text-ink-faint">
-          {scanning
-            ? `Measuring ${measuredCount} of ${targets.length}…`
-            : `${formatBytes(safeBytes)} safe to clean`}
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            className="btn"
-            disabled={safeTargets.length === 0 || cleaning}
-            onClick={() => setSelected(new Set(safeTargets.map((t) => t.id)))}
-          >
-            Select all safe
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={chosen.length === 0 || cleaning || scanning}
-            onClick={(e) => {
-              const box = e.currentTarget.getBoundingClientRect()
-              setCleanFrom({
-                x: box.left + box.width / 2 - window.innerWidth / 2,
-                y: box.top + box.height / 2 - window.innerHeight / 2,
-              })
-              setConfirming(true)
-            }}
-          >
-            {cleaning ? 'Cleaning…' : `Clean ${formatBytes(chosenBytes)}`}
-          </button>
-        </div>
-      </footer>
+      {storage.access !== 'checking' && !askAccess && (
+        <footer className="flex h-12 shrink-0 items-center gap-3 border-t border-line px-6">
+          <span className="text-[11.5px] text-ink-faint">
+            {scanning
+              ? `Measuring ${measuredCount} of ${targets.length}…`
+              : `${formatBytes(safeBytes)} safe to clean`}
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              className="btn"
+              disabled={safeTargets.length === 0 || cleaning}
+              onClick={() => setSelected(new Set(safeTargets.map((t) => t.id)))}
+            >
+              Select all safe
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={chosen.length === 0 || cleaning || scanning}
+              onClick={(e) => {
+                const box = e.currentTarget.getBoundingClientRect()
+                setCleanFrom({
+                  x: box.left + box.width / 2 - window.innerWidth / 2,
+                  y: box.top + box.height / 2 - window.innerHeight / 2,
+                })
+                setConfirming(true)
+              }}
+            >
+              {cleaning ? 'Cleaning…' : `Clean ${formatBytes(chosenBytes)}`}
+            </button>
+          </div>
+        </footer>
+      )}
 
       <ConfirmClean
         open={confirming}
@@ -318,8 +361,15 @@ function categoryNotes(
   targets: StorageTarget[],
   measurements: ReadonlyMap<string, Measurement>,
   scanning: boolean,
+  limited: boolean,
 ): Partial<Record<CategoryId, string>> {
   const notes: Partial<Record<CategoryId, string>> = {}
+  // A scan without access leaves these out entirely, so a total would read 0 B.
+  if (limited) {
+    notes.icloud = 'No access'
+    notes.messages = 'No access'
+    notes.photos = 'No access'
+  }
   for (const { category, group } of SECTIONS) {
     const rows = targets.filter((t) => t.group === group)
     const denied = rows.some((t) => {
@@ -444,6 +494,40 @@ function Overview({
         would actually free.
       </p>
     </>
+  )
+}
+
+function AccessRequest({ onOpen, onSkip }: { onOpen: () => void; onSkip: () => void }) {
+  return (
+    <section className="mx-auto flex max-w-[460px] flex-col items-center pt-16 text-center">
+      <span className="mb-5 flex size-12 items-center justify-center rounded-xl border border-line bg-surface-2 text-ink-dim">
+        <ShieldCheck size={20} />
+      </span>
+      <h1 className="text-[20px] font-semibold tracking-tight text-ink">
+        Give marè access to your disk
+      </h1>
+      <p className="mt-2 text-[12.5px] leading-relaxed text-ink-faint">
+        Storage reads every folder to find what's taking up space. Without Full Disk Access,
+        macOS asks about each folder separately and keeps Messages and Photos hidden.
+      </p>
+      <ol className="mt-6 w-full list-decimal space-y-2 rounded-card border border-line bg-surface-2 py-4 pl-9 pr-4 text-left text-[12.5px] leading-relaxed text-ink-dim">
+        <li>Open Full Disk Access in System Settings.</li>
+        <li>Turn on marè. If it isn't listed, click + and choose marè from Applications.</li>
+        <li>If macOS offers Quit &amp; Reopen, choose it. The scan then starts on its own.</li>
+      </ol>
+      <div className="mt-6 flex gap-2">
+        <button type="button" className="btn btn-primary" onClick={onOpen}>
+          Open System Settings
+        </button>
+        <button type="button" className="btn" onClick={onSkip}>
+          Scan without access
+        </button>
+      </div>
+      <p className="mt-3 text-[11.5px] text-ink-faint">
+        Scanning without access skips Desktop, Documents, Downloads, iCloud Drive, Messages
+        and Photos.
+      </p>
+    </section>
   )
 }
 

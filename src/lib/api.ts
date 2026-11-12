@@ -135,7 +135,13 @@ export const openInEditor = (path: string) =>
 
 export const diskUsage = () => invoke<DiskUsage>('disk_usage')
 
-export const storageTargets = () => invoke<StorageTarget[]>('storage_targets')
+export const fullDiskAccess = () => invoke<boolean>('full_disk_access')
+
+export const openPrivacySettings = () => invoke<void>('open_privacy_settings')
+
+/** Without `includeGuarded`, folders macOS would prompt for are left out. */
+export const storageTargets = (includeGuarded: boolean) =>
+  invoke<StorageTarget[]>('storage_targets', { includeGuarded })
 
 export const storageChildren = (path: string) =>
   invoke<StorageTarget[]>('storage_children', { path })

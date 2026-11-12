@@ -159,15 +159,16 @@ anything is removed. It also refuses to touch:
 marè makes no network requests. It runs as you, with no admin password and
 no background process, and reads your Mac only while it's open.
 
-macOS may ask for a few permissions the first time you use Storage:
+The first time you open Storage, marè asks for Full Disk Access, which lets it read
+every folder without macOS asking about each one. It explains how to turn it on and
+starts scanning once you have. You can scan without it instead; Desktop, Documents,
+Downloads, iCloud Drive, Messages and Photos are then left out.
 
-- Access to Desktop, Documents and Downloads, to measure them.
-- Control of Finder, to move items to the Trash. Without it, Trash moves fail and the
-  app tells you why.
-- Full Disk Access, which is optional. Without it, Storage can't see Messages, Photos
-  or a few system folders, and says how many items it couldn't read. To grant it,
-  open System Settings › Privacy & Security › Full Disk Access, click +, and choose
-  marè.
+marè isn't signed with an Apple Developer ID yet, so macOS ties the permission to each
+build. After an update, turn Full Disk Access on again if Storage asks for it.
+
+Moving an item to the Trash asks once for permission to control Finder. Without it,
+Trash moves fail and marè says why.
 
 ## Development
 

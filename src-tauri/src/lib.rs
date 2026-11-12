@@ -79,9 +79,19 @@ fn disk_usage() -> Result<DiskUsage, String> {
 }
 
 #[tauri::command]
-async fn storage_targets() -> Result<Vec<Target>, String> {
+fn full_disk_access() -> bool {
+    storage::has_full_disk_access()
+}
+
+#[tauri::command]
+fn open_privacy_settings() -> Result<(), String> {
+    storage::open_privacy_settings()
+}
+
+#[tauri::command]
+async fn storage_targets(include_guarded: bool) -> Result<Vec<Target>, String> {
     let home = home()?;
-    tauri::async_runtime::spawn_blocking(move || storage::targets(&home))
+    tauri::async_runtime::spawn_blocking(move || storage::targets(&home, include_guarded))
         .await
         .map_err(|e| format!("storage scan failed: {e}"))
 }
@@ -123,6 +133,8 @@ pub fn run() {
             open_in_terminal,
             open_in_editor,
             disk_usage,
+            full_disk_access,
+            open_privacy_settings,
             storage_targets,
             storage_children,
             measure_target,

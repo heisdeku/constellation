@@ -39,6 +39,24 @@ const OPAQUE_SUFFIXES: &[&str] = &[".photoslibrary", ".musiclibrary", ".tvlibrar
 /// Home folders holding your own files, shown under Documents and browsable.
 const FILE_FOLDERS: &[&str] = &["Documents", "Downloads", "Desktop", "Movies", "Music"];
 const ICLOUD_FOLDER: &str = "Library/Mobile Documents";
+/// Home folders macOS guards one by one: reading any of them without Full Disk Access
+/// stops the scan for a prompt. A scan without access leaves them out.
+const GUARDED: &[&str] = &[
+    "Desktop",
+    "Documents",
+    "Downloads",
+    "Movies",
+    "Music",
+    "Pictures",
+    ICLOUD_FOLDER,
+    "Library/Messages",
+    ".Trash",
+];
+/// Readable only with Full Disk Access, and a refused read shows no prompt.
+const ACCESS_PROBE: &str = "/Library/Application Support/com.apple.TCC/TCC.db";
+const PRIVACY_SETTINGS: &str =
+    "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles";
+const OPEN_TIMEOUT: Duration = Duration::from_secs(4);
 /// Temp files younger than this may belong to something still running.
 const TEMP_MIN_AGE: Duration = Duration::from_secs(3 * 24 * 60 * 60);
 
@@ -503,9 +521,24 @@ fn find_artifacts(root: &Path) -> Vec<PathBuf> {
     found
 }
 
+pub fn has_full_disk_access() -> bool {
+    fs::File::open(ACCESS_PROBE).is_ok()
+}
+
+/// Opens System Settings at the Full Disk Access list.
+pub fn open_privacy_settings() -> Result<(), String> {
+    if sh::run_ok("open", &[PRIVACY_SETTINGS], OPEN_TIMEOUT)? {
+        Ok(())
+    } else {
+        Err("Couldn't open System Settings. Open Privacy & Security › Full Disk Access there."
+            .to_string())
+    }
+}
+
 /// Everything worth showing on this machine. Sizes come later from [`measure`], one
-/// target at a time, because the slowest of them take minutes.
-pub fn targets(home: &Path) -> Vec<Target> {
+/// target at a time, because the slowest of them take minutes. Without
+/// `include_guarded`, folders macOS would prompt for are left out.
+pub fn targets(home: &Path, include_guarded: bool) -> Vec<Target> {
     let mut plans: Vec<Plan> = fixed_plans(home);
     plans.extend(location_plans(home));
     plans.extend(app_plans(home));
@@ -528,9 +561,11 @@ pub fn targets(home: &Path) -> Vec<Target> {
         plans.extend(find_artifacts(&root).iter().filter_map(|a| project_plan(&root, a)));
     }
 
+    let guarded: Vec<PathBuf> = GUARDED.iter().map(|g| home.join(g)).collect();
     plans
         .into_iter()
         .map(|p| p.target)
+        .filter(|t| include_guarded || !guarded.iter().any(|g| Path::new(&t.path).starts_with(g)))
         .filter(|t| Path::new(&t.path).is_dir())
         .collect()
 }
@@ -1134,7 +1169,7 @@ mod tests {
         home.write("dev/rusty/Cargo.toml", 16);
         home.write("dev/rusty/target/debug/app", 16);
 
-        let found = targets(&home.0);
+        let found = targets(&home.0, true);
         let projects: Vec<_> = found.iter().filter(|t| t.group == Group::Projects).collect();
         assert_eq!(projects.len(), 2, "{projects:?}");
         assert!(projects.iter().all(|t| t.safety == Safety::Review));
@@ -1278,6 +1313,28 @@ mod tests {
 
         let disk = disk_usage().unwrap();
         assert!(disk.system_bytes < disk.total_bytes - disk.free_bytes);
+    }
+
+    #[test]
+    fn a_scan_without_access_leaves_guarded_folders_out() {
+        let home = Sandbox::new("guarded");
+        home.write("Documents/report.pdf", 16);
+        home.write("Library/Messages/chat.db", 16);
+        home.write("dev/web/package.json", 16);
+        home.write("dev/web/node_modules/lib/index.js", 16);
+        home.write(".npm/_cacache/blob", 16);
+
+        let ids = |include| -> Vec<String> {
+            targets(&home.0, include).into_iter().map(|t| t.id).collect()
+        };
+        let limited = ids(false);
+        assert!(limited.contains(&"npm".to_string()));
+        assert!(limited.iter().any(|id| id.starts_with("project:")));
+        assert!(!limited.iter().any(|id| id == "folder:Documents" || id == "messages"));
+
+        let full = ids(true);
+        assert!(full.iter().any(|id| id == "folder:Documents"));
+        assert!(full.iter().any(|id| id == "messages"));
     }
 
     fn lock(path: &Path, flag: &str) {

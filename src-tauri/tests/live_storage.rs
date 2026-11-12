@@ -12,7 +12,7 @@ use mare_lib::storage::{self, Measurement, Target};
 #[ignore = "walks the whole home folder"]
 fn measures_every_target_on_this_machine() {
     let home = PathBuf::from(std::env::var_os("HOME").expect("HOME"));
-    let queue = Mutex::new(storage::targets(&home));
+    let queue = Mutex::new(storage::targets(&home, true));
     let results: Mutex<Vec<(Target, Measurement)>> = Mutex::new(Vec::new());
 
     std::thread::scope(|scope| {
