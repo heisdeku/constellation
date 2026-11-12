@@ -118,10 +118,6 @@ export function SwitchField({
         </label>
         {hint && <p className="mt-0.5 text-[11.5px] leading-snug text-ink-faint">{hint}</p>}
       </div>
-      {/* Track is 36×20 with a 1px border and 2px inset, leaving a 30px runway for
-          the 14px thumb — hence the 16px travel. `translate` needs naming in the
-          transition explicitly: Tailwind v4 moves the thumb with that property, not
-          `transform`, so `transition-transform` would make it jump. */}
       <Switch.Root
         id={id}
         checked={checked}

@@ -23,8 +23,6 @@ import type { SortDir, SortKey } from '~/lib/filter'
 
 const entryKey = (entry: PortEntry) => entry.id
 
-// PID and CPU drop out when the table is narrow, say beside the detail panel, which
-// shows both anyway.
 const GRID =
   'grid grid-cols-[72px_minmax(0,1.5fr)_minmax(0,1.2fr)_88px_96px] @3xl:grid-cols-[86px_minmax(0,1.5fr)_minmax(0,1.35fr)_104px_66px_60px_96px] items-center gap-3 px-6'
 const WIDE_ONLY = 'hidden @3xl:block'
@@ -40,14 +38,12 @@ export function PortsTable({
 }: {
   entries: PortEntry[]
   selectedId: string | null
-  /** The row moving into or out of the detail panel; only it carries shared names. */
   movingId: string | null
   onSelect: (id: string | null) => void
   sort: SortKey
   dir: SortDir
   onSort: (key: SortKey) => void
 }) {
-  // Rescans land every few seconds; rows slide to their new place instead of jumping.
   const motion = useListMotion(entries, entryKey)
 
   return (
@@ -136,7 +132,6 @@ function Row({
   const folder = folderFor(entry)
   const service = wellKnownName(entry.port)
   const label = entry.docker?.name ?? p.name
-  // While a row's panel is open, the panel carries these names instead.
   const shared = moving && !selected && !leaving
 
   return (
@@ -160,7 +155,6 @@ function Row({
         p.paused && 'opacity-70',
       )}
     >
-      {/* Port */}
       <div className="flex flex-col">
         <span
           className="w-fit font-mono text-[14px] font-semibold tabular-nums text-ink"
@@ -173,7 +167,6 @@ function Row({
         </span>
       </div>
 
-      {/* Process */}
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
           <StateDot state={p.state} paused={p.paused} />
@@ -192,7 +185,6 @@ function Row({
         </p>
       </div>
 
-      {/* Folder */}
       <div className="min-w-0 overflow-hidden">
         {folder ? (
           <Tip
@@ -242,7 +234,6 @@ function Row({
         )}
       </div>
 
-      {/* Reach */}
       <div>
         {entry.scope === 'lan' ? (
           <Chip tone="held">Network</Chip>
@@ -267,7 +258,6 @@ function Row({
         {p.cpu.toFixed(1)}
       </span>
 
-      {/* Actions */}
       <div
         className="flex items-center justify-end gap-0.5"
         onClick={(e) => e.stopPropagation()}

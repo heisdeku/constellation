@@ -64,7 +64,6 @@ function Sidebar({ onSearch }: { onSearch: () => void }) {
     >
       {({ isActive }) => (
         <>
-          {/* One highlight, carried from the old page's link to the new one by name. */}
           {isActive && (
             <span
               aria-hidden
@@ -81,7 +80,6 @@ function Sidebar({ onSearch }: { onSearch: () => void }) {
 
   return (
     <aside className="flex w-[216px] shrink-0 flex-col px-3 pb-3">
-      {/* The window's traffic lights sit here; the strip drags the window. */}
       <div className="drag-region h-11 shrink-0" />
 
       <div className="mb-4 flex items-center gap-2 px-1.5">
@@ -115,7 +113,6 @@ function Sidebar({ onSearch }: { onSearch: () => void }) {
 
 function DiskMeter() {
   const { disk } = useStorage()
-  // Holds its place before the numbers arrive, so Settings above it never moves.
   const used = disk ? (disk.totalBytes - disk.freeBytes) / disk.totalBytes : 0
 
   return (

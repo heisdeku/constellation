@@ -1,9 +1,5 @@
 import type { PortEntry, PortScope } from './api'
 
-/**
- * Ports common enough that showing the service name saves a lookup. Deliberately
- * short — a wrong guess is worse than no guess.
- */
 const WELL_KNOWN: Record<number, string> = {
   22: 'SSH',
   25: 'SMTP',
@@ -98,17 +94,14 @@ export interface FolderRef {
   path: string
   label: string
   kind: 'project' | 'cwd' | 'app'
-  /** The directory is gone — typically a deleted worktree whose server is still running. */
   missing: boolean
 }
 
 /** The best folder to link to for an entry, and what it represents. */
 export function folderFor(entry: PortEntry): FolderRef | null {
   const p = entry.process
-  // A project root was found by reading a manifest off disk, so it exists by construction.
   if (p.project)
     return { path: p.project.path, label: p.project.name, kind: 'project', missing: false }
-  // Only an explicit `false` means deleted — never infer it from a missing field.
   if (p.cwd)
     return { path: p.cwd, label: basename(p.cwd), kind: 'cwd', missing: p.cwdExists === false }
   if (p.appBundle)

@@ -20,7 +20,6 @@ export function transitionName(prefix: string, text: string): string {
 
 interface MotionItem<T> {
   item: T
-  /** Already removed from the list, shown only while it fades out where it was. */
   leaving: boolean
 }
 
@@ -33,13 +32,10 @@ interface MotionItem<T> {
 export function useListMotion<T>(list: T[], keyOf: (item: T) => string) {
   const ref = useRef<HTMLDivElement>(null)
   const tops = useRef<Map<string, number> | null>(null)
-  // Compared by keys, not array identity: callers often build a fresh array every render.
   const order = list.map(keyOf).join('\n')
   const [previous, setPrevious] = useState({ list, order })
   const [leaving, setLeaving] = useState<Array<{ item: T; index: number }>>([])
 
-  // Derived during render, so the removed items are in the very commit that drops
-  // them and nothing flashes out for a frame.
   if (order !== previous.order) {
     setPrevious({ list, order })
     if (!reducedMotion()) {

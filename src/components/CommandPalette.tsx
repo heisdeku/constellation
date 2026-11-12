@@ -14,7 +14,6 @@ interface Item {
   label: string
   meta: string
   icon: React.ReactNode
-  /** Extra words that match a search but aren't shown. */
   keywords: string
   run: () => void
 }

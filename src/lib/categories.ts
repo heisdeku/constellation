@@ -9,7 +9,6 @@ import {
   MessageCircle,
 } from 'lucide-react'
 
-/** The same list, in the same order, as System Settings › General › Storage. */
 export const CATEGORIES = [
   { id: 'applications', label: 'Applications', icon: AppWindow, bar: 'bg-info' },
   { id: 'developer', label: 'Developer', icon: Hammer, bar: 'bg-violet' },

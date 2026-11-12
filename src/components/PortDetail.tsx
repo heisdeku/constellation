@@ -38,7 +38,6 @@ export function PortDetail({
   const args = commandArgs(p.command, p.exe)
   const heading = useRef<HTMLDivElement>(null)
 
-  // Opening moves focus here; switching rows while open leaves it where it is.
   useEffect(() => heading.current?.focus({ preventScroll: true }), [])
 
   return (

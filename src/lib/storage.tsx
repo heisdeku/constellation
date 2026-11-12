@@ -21,27 +21,21 @@ import {
   type StorageTarget,
 } from './api'
 
-/** Walks are disk-bound; past this they slow each other down and the Mac with them. */
 const MEASURE_CONCURRENCY = 6
 
 type Access = 'checking' | 'granted' | 'missing'
 type Scope = 'everything' | 'limited'
 
 interface StorageState {
-  /** Whether marè has Full Disk Access. Without it, macOS prompts for each guarded folder. */
   access: Access
-  /** True when a scan is due: the first one, or a fuller one now that access arrived. */
   needsScan: boolean
-  /** The last scan left guarded folders out. */
   limited: boolean
   checkAccess: () => Promise<void>
   scanWithoutAccess: () => void
   disk: DiskUsage | null
   targets: StorageTarget[]
-  /** What's inside each folder opened so far, keyed by its path. */
   browsed: ReadonlyMap<string, StorageTarget[]>
   measurements: ReadonlyMap<string, Measurement>
-  /** Targets measured so far this scan, for the progress line. */
   measuredCount: number
   scanning: boolean
   cleaning: boolean
@@ -79,12 +73,10 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
     checkAccess().catch((e) => setError(errorMessage(e)))
   }, [checkAccess])
 
-  // With access, everything is scanned; without it, only once the user says so.
   let wanted: Scope | null = null
   if (access === 'granted') wanted = 'everything'
   else if (access === 'missing' && withoutAccess) wanted = 'limited'
 
-  // Cheap enough to read up front, so the sidebar can show free space before a scan.
   useEffect(() => {
     diskUsage().then(setDisk, (e) => setError(errorMessage(e)))
   }, [])
@@ -99,7 +91,6 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
       const queue = [...ids]
       const worker = async () => {
         for (let id = queue.shift(); id; id = queue.shift()) {
-          // One unreadable folder shouldn't cost the rest of the scan.
           await measure(id).catch((e) => setError(errorMessage(e)))
           setMeasuredCount((n) => n + 1)
         }

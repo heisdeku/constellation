@@ -7,11 +7,9 @@ import { useToast } from './Toaster'
 import { folderFor } from '~/lib/format'
 
 interface Actions {
-  /** PID currently being signalled, so its row can show a spinner. */
   busyPid: number | null
   pause: (entry: PortEntry) => Promise<void>
   resume: (entry: PortEntry) => Promise<void>
-  /** Runs the confirmation flow when enabled in settings. */
   stop: (entry: PortEntry) => void
   reveal: (entry: PortEntry) => Promise<void>
   openTerminal: (entry: PortEntry) => Promise<void>
@@ -25,7 +23,6 @@ async function copyText(text: string) {
   try {
     await navigator.clipboard.writeText(text)
   } catch {
-    // WKWebView occasionally refuses the async API; the legacy path still works.
     const el = document.createElement('textarea')
     el.value = text
     el.style.position = 'fixed'
@@ -66,7 +63,6 @@ export function ActionsProvider({ children }: { children: React.ReactNode }) {
             type: 'success',
           })
         } else {
-          // SIGTERM was ignored — offer the escalation rather than doing it silently.
           toast.add({
             title: `${entry.process.name} is still running`,
             description: res.message,
@@ -201,7 +197,6 @@ function StopDialog({
   onClose: () => void
   onConfirm: (entry: PortEntry) => void
 }) {
-  // Keep the last entry around during the close animation so the text doesn't flash.
   const [shown, setShown] = React.useState<PortEntry | null>(entry)
   React.useEffect(() => {
     if (entry) setShown(entry)

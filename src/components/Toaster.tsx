@@ -1,7 +1,6 @@
 import { Toast } from '@base-ui-components/react/toast'
 import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react'
 
-/** Re-exported so callers don't need to know which toast library is underneath. */
 export const useToast = Toast.useToastManager
 
 const ICONS: Record<string, React.ReactNode> = {

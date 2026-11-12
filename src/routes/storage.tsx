@@ -33,7 +33,6 @@ import { useStorage } from '~/lib/storage'
 
 interface StorageSearch {
   category?: CategoryId
-  /** A folder opened from inside a category. */
   path?: string
 }
 
@@ -45,17 +44,12 @@ export const Route = createFileRoute('/storage')({
   }),
 })
 
-/** Below this a row is noise: dozens of apps keep a few kilobytes of cache. */
 const MIN_ROW_BYTES = 1_000_000
 const COLLAPSED_ROWS = 8
-/** Past this ratio, explain why the size shown is smaller than Finder or `du`. */
 const SHARED_HINT_RATIO = 1.5
 
-// The overview row and the category page share these names, so the row's label and
-// size carry into the page's title and total.
 const categoryLabel = (id: CategoryId) => `category-label-${id}`
 const categorySize = (id: CategoryId) => `category-size-${id}`
-// A folder's row and the page it opens share this, so its name grows into the title.
 const folderName = (path: string) => transitionName('folder', path)
 const targetKey = (target: StorageTarget) => target.id
 
@@ -64,7 +58,6 @@ const SECTIONS: ReadonlyArray<{
   category: CategoryId
   title: string
   hint: string
-  /** Already inside a folder listed above it, so it isn't added to the total again. */
   nested?: boolean
 }> = [
   { group: 'applications', category: 'applications', title: 'Apps', hint: 'Removed apps go to the Trash.' },
@@ -79,7 +72,6 @@ const SECTIONS: ReadonlyArray<{
   { group: 'hidden', category: 'system', title: 'Hidden system files', hint: "Folders Finder and System Settings don't show." },
 ]
 
-/** Apps whose libraries must be managed from inside the app itself. */
 const OWNING_APP: Partial<Record<StorageGroup, { name: string; path: string }>> = {
   messages: { name: 'Messages', path: '/System/Applications/Messages.app' },
   photos: { name: 'Photos', path: '/System/Applications/Photos.app' },
@@ -105,21 +97,16 @@ function StoragePage() {
   const { category, path } = Route.useSearch()
   const { entries, home } = useApp()
   const [confirming, setConfirming] = useState(false)
-  /** Where the Clean button sits, relative to the window's centre, for the dialog to grow from. */
   const [cleanFrom, setCleanFrom] = useState({ x: 0, y: 0 })
   const toast = useToast()
   const failed = (title: string) => (e: unknown) =>
     toast.add({ title, description: errorMessage(e), type: 'error' })
   const askAccess = storage.access === 'missing' && !storage.limited && !storage.needsScan
 
-  // Scanning walks millions of files, so it waits until this page is opened, and
-  // the result is kept when you navigate away and back.
   useEffect(() => {
     if (storage.needsScan && !scanning) void scan()
   }, [storage.needsScan, scanning, scan])
 
-  // Access is granted in System Settings, outside the app, so check again while it's
-  // missing: on return to the window, and every couple of seconds while waiting.
   useEffect(() => {
     if (storage.access !== 'missing') return
     const check = () => void storage.checkAccess()
@@ -142,7 +129,6 @@ function StoragePage() {
 
   const size = (t: StorageTarget) => shownBytes(t, measurements.get(t.id))
 
-  /** Anything holding a running project: removing it would break something live. */
   const inUse = useMemo(() => {
     const roots = entries.flatMap((e) => e.process.project?.path ?? [])
     const holds = (t: StorageTarget, root: string) =>
@@ -364,7 +350,6 @@ function categoryNotes(
   limited: boolean,
 ): Partial<Record<CategoryId, string>> {
   const notes: Partial<Record<CategoryId, string>> = {}
-  // A scan without access leaves these out entirely, so a total would read 0 B.
   if (limited) {
     notes.icloud = 'No access'
     notes.messages = 'No access'
@@ -379,7 +364,6 @@ function categoryNotes(
     if (denied) notes[category] = 'No access'
     if (scanning && rows.some((t) => !measurements.has(t.id))) notes[category] = 'Calculating…'
   }
-  // System Data is the remainder, so it's only known once everything else is.
   if (scanning) notes.system = 'Calculating…'
   return notes
 }
@@ -548,7 +532,6 @@ function CategoryView({
 }: {
   category: CategoryId
   path: string | undefined
-  /** Already formatted, since it can read Calculating… while the scan runs. */
   total: string
   rowProps: RowProps
 }) {
@@ -559,7 +542,6 @@ function CategoryView({
   const open = (next: string) =>
     void navigate({ search: { category, path: next }, viewTransition: true })
 
-  // A new page puts focus on its title, so the keyboard and screen readers start there.
   const title = useRef<HTMLHeadingElement>(null)
   useEffect(() => title.current?.focus({ preventScroll: true }), [category, path])
 
@@ -655,8 +637,6 @@ function GroupSection({
         shownBytes(b, measurements.get(b.id)) - shownBytes(a, measurements.get(a.id)),
     )
   const shown = expanded ? rows : rows.slice(0, COLLAPSED_ROWS)
-  // Cleaned rows fade out where they were and the rest close the gap; rows that
-  // appear, from "Show all" or a folder finishing its scan, fade in one after another.
   const motion = useListMotion(shown, targetKey)
 
   if (loading) {

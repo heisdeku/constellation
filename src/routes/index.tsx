@@ -43,10 +43,7 @@ function PortsPage() {
   const setSearch = (patch: Partial<PortsSearch>, viewTransition = false) =>
     navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, viewTransition })
 
-  // The one row whose port and name move into the panel, or back out of it. Naming
-  // every row made all of them slide when the table narrowed for the panel.
   const [movingRow, setMovingRow] = useState<string | null>(null)
-  // Committed before the transition captures the page, so the row has its name in time.
   const markMoving = (id: string | null) => flushSync(() => setMovingRow(id))
 
   const select = (sel: string | null) => {
@@ -54,7 +51,6 @@ function PortsPage() {
     void setSearch({ sel: sel ?? undefined }, true)
   }
 
-  // Focus goes back to the row that opened the panel, so the keyboard picks up there.
   const closeDetail = async () => {
     const id = search.sel
     markMoving(id ?? null)
@@ -67,13 +63,11 @@ function PortsPage() {
     [entries, search, settings.hideSystem],
   )
 
-  // Keep the panel honest: a selected process can exit between scans.
   const selected = visible.find((e) => e.id === search.sel) ?? null
   useEffect(() => {
     if (search.sel && !initialising && !entries.some((e) => e.id === search.sel)) {
       setSearch({ sel: undefined })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, search.sel, initialising])
 
   useEffect(() => {
@@ -104,7 +98,6 @@ function PortsPage() {
   return (
     <ActionsProvider>
       <div className="flex h-full">
-        {/* Switches to its new width at once rather than cross-fading two layouts. */}
         <div
           className="flex min-w-0 flex-1 flex-col"
           style={{ viewTransitionName: 'ports-main' }}
