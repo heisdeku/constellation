@@ -4,7 +4,6 @@ import { RouterProvider, createHashHistory, createRouter } from '@tanstack/react
 import { routeTree } from './routeTree.gen'
 import './styles.css'
 
-// Hash history keeps deep links working when the app is served from tauri://.
 const router = createRouter({
   routeTree,
   history: createHashHistory(),

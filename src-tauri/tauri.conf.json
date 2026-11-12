@@ -1,21 +1,21 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Port Tracker",
+  "productName": "marè",
   "version": "0.1.0",
-  "identifier": "dev.oluwaferanmi.port-tracker",
+  "identifier": "dev.oluwaferanmi.mare",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm ui:dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm ui:build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "Port Tracker",
-        "width": 1180,
-        "height": 800,
-        "minWidth": 760,
+        "title": "marè",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 900,
         "minHeight": 520,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
@@ -37,10 +37,11 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "10.15",
+      "signingIdentity": "-"
     },
     "category": "DeveloperTool",
-    "shortDescription": "See every port on your Mac.",
-    "longDescription": "Port Tracker lists every listening port on your machine, tells you which process owns it, links straight to that project folder, and lets you pause or stop it."
+    "shortDescription": "See what is running on your Mac and what is filling its disk.",
+    "longDescription": "marè lists every listening port and the process behind it, and shows what is really filling your disk, including the caches macOS hides under System Data, so you can clear them safely."
   }
 }

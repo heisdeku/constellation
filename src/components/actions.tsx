@@ -7,11 +7,9 @@ import { useToast } from './Toaster'
 import { folderFor } from '~/lib/format'
 
 interface Actions {
-  /** PID currently being signalled, so its row can show a spinner. */
   busyPid: number | null
   pause: (entry: PortEntry) => Promise<void>
   resume: (entry: PortEntry) => Promise<void>
-  /** Runs the confirmation flow when enabled in settings. */
   stop: (entry: PortEntry) => void
   reveal: (entry: PortEntry) => Promise<void>
   openTerminal: (entry: PortEntry) => Promise<void>
@@ -25,7 +23,6 @@ async function copyText(text: string) {
   try {
     await navigator.clipboard.writeText(text)
   } catch {
-    // WKWebView occasionally refuses the async API; the legacy path still works.
     const el = document.createElement('textarea')
     el.value = text
     el.style.position = 'fixed'
@@ -66,14 +63,13 @@ export function ActionsProvider({ children }: { children: React.ReactNode }) {
             type: 'success',
           })
         } else {
-          // SIGTERM was ignored — offer the escalation rather than doing it silently.
           toast.add({
             title: `${entry.process.name} is still running`,
             description: res.message,
             type: 'info',
             timeout: 12000,
             actionProps: {
-              children: 'Force stop (SIGKILL)',
+              children: 'Force Stop',
               onClick: () => void doStop(entry, true),
             },
           })
@@ -98,7 +94,7 @@ export function ActionsProvider({ children }: { children: React.ReactNode }) {
           const res = await api.pauseProcess(entry.pid, entry.process.name)
           toast.add({
             title: `Paused ${entry.process.name}`,
-            description: `Port ${entry.port} stays bound. Resume to pick up where it left off.`,
+            description: `It keeps port ${entry.port} until you resume it.`,
             type: 'success',
           })
           if (!res.process) void refresh()
@@ -201,25 +197,28 @@ function StopDialog({
   onClose: () => void
   onConfirm: (entry: PortEntry) => void
 }) {
-  // Keep the last entry around during the close animation so the text doesn't flash.
   const [shown, setShown] = React.useState<PortEntry | null>(entry)
   React.useEffect(() => {
     if (entry) setShown(entry)
   }, [entry])
 
   const target = entry ?? shown
+  const popup = React.useRef<HTMLDivElement>(null)
 
   return (
     <AlertDialog.Root open={entry !== null} onOpenChange={(open) => !open && onClose()}>
       <AlertDialog.Portal>
-        <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px] transition-opacity duration-150 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
-        <AlertDialog.Popup className="popup fixed left-1/2 top-1/2 z-50 w-[420px] -translate-x-1/2 -translate-y-1/2 p-5">
+        <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px] motion-reduce:backdrop-blur-none transition-opacity duration-150 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
+        <AlertDialog.Popup
+          ref={popup}
+          initialFocus={popup}
+          className="popup fixed left-1/2 top-1/2 z-50 w-[420px] -translate-x-1/2 -translate-y-1/2 p-5">
           <AlertDialog.Title className="text-[14px] font-semibold text-ink">
             Stop {target?.process.name}?
           </AlertDialog.Title>
           <AlertDialog.Description className="mt-2 text-[12.5px] leading-relaxed text-ink-dim">
-            This sends SIGTERM to PID {target?.pid}, asking it to shut down and release
-            port {target?.port}. Unsaved work in that process will be lost.
+            It will be asked to quit and release port {target?.port}. Anything unsaved in
+            it is lost.
           </AlertDialog.Description>
 
           {target?.process.command && (
@@ -232,11 +231,10 @@ function StopDialog({
             <AlertDialog.Close className="btn">Cancel</AlertDialog.Close>
             <button
               type="button"
-              autoFocus
               className="btn border-danger/40 bg-danger/15 text-danger hover:!bg-danger/25"
               onClick={() => target && onConfirm(target)}
             >
-              Stop process
+              Stop
             </button>
           </div>
         </AlertDialog.Popup>

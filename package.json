@@ -1,16 +1,17 @@
 {
-  "name": "port-tracker",
+  "name": "mare",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "See every port on your Mac, what owns it, and where it lives.",
+  "license": "MIT",
+  "packageManager": "pnpm@11.8.0",
+  "description": "See what is using your Mac's ports and disk, and clear space safely.",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "dev": "tauri dev",
+    "build": "tauri build",
     "tauri": "tauri",
-    "app": "tauri dev",
-    "app:build": "tauri build",
+    "ui:dev": "vite",
+    "ui:build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

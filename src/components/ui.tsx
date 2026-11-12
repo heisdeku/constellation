@@ -118,10 +118,6 @@ export function SwitchField({
         </label>
         {hint && <p className="mt-0.5 text-[11.5px] leading-snug text-ink-faint">{hint}</p>}
       </div>
-      {/* Track is 36×20 with a 1px border and 2px inset, leaving a 30px runway for
-          the 14px thumb — hence the 16px travel. `translate` needs naming in the
-          transition explicitly: Tailwind v4 moves the thumb with that property, not
-          `transform`, so `transition-transform` would make it jump. */}
       <Switch.Root
         id={id}
         checked={checked}
@@ -139,16 +135,43 @@ export function SwitchField({
   )
 }
 
-/** Small coloured dot conveying process state at a glance. */
+/**
+ * Process state at a glance, told apart by shape as well as colour: a filled dot when
+ * running, a ring when paused, a square for a zombie, a faded dot otherwise.
+ */
 export function StateDot({ state, paused }: { state: string; paused: boolean }) {
-  const tone = paused
-    ? 'bg-held'
+  const label = paused ? 'Paused' : state === 'running' ? 'Running' : state
+  const shape = paused
+    ? 'rounded-full border-[1.5px] border-held'
     : state === 'running'
-      ? 'bg-live'
+      ? 'rounded-full bg-live'
       : state === 'zombie'
-        ? 'bg-danger'
-        : 'bg-live/50'
-  return <span className={cx('inline-block size-[7px] shrink-0 rounded-full', tone)} />
+        ? 'rounded-[1px] bg-danger'
+        : 'rounded-full bg-live/50'
+  return (
+    <span role="img" aria-label={label} className={cx('inline-block size-[7px] shrink-0', shape)} />
+  )
+}
+
+/** The title row every page starts with. */
+export function PageHeader({
+  title,
+  subtitle,
+  actions,
+}: {
+  title: React.ReactNode
+  subtitle?: React.ReactNode
+  actions?: React.ReactNode
+}) {
+  return (
+    <header className="flex shrink-0 items-start justify-between gap-4 px-6 pb-4 pt-5">
+      <div className="min-w-0">
+        <h1 className="text-[20px] font-semibold tracking-tight text-ink">{title}</h1>
+        {subtitle && <p className="mt-1 text-[12.5px] text-ink-faint">{subtitle}</p>}
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+    </header>
+  )
 }
 
 export function Empty({
@@ -158,14 +181,16 @@ export function Empty({
 }: {
   icon: React.ReactNode
   title: string
-  body: string
+  body?: string
 }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
       <div className="text-ink-faint/60">{icon}</div>
       <div>
         <p className="text-[13px] font-medium text-ink-dim">{title}</p>
-        <p className="mt-1 max-w-[380px] text-[12px] leading-relaxed text-ink-faint">{body}</p>
+        {body && (
+          <p className="mt-1 max-w-[380px] text-[12px] leading-relaxed text-ink-faint">{body}</p>
+        )}
       </div>
     </div>
   )

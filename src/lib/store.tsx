@@ -11,15 +11,10 @@ import { homeDir } from '@tauri-apps/api/path'
 import { errorMessage, scanPorts, type PortEntry, type ScanResult } from './api'
 
 export interface Settings {
-  /** How often to rescan, in ms. */
   refreshMs: number
-  /** UDP has no listen state, so it's noisy — opt in. */
   includeUdp: boolean
-  /** Hide ports owned by other users (mostly macOS system daemons). */
   hideSystem: boolean
-  /** Ask before sending SIGTERM. */
   confirmStop: boolean
-  /** How long to wait for a graceful exit before offering SIGKILL. */
   graceMs: number
 }
 
@@ -31,7 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   graceMs: 3000,
 }
 
-const STORAGE_KEY = 'port-tracker.settings.v1'
+const STORAGE_KEY = 'mare.settings.v1'
 
 function loadSettings(): Settings {
   try {
@@ -52,11 +47,9 @@ interface AppState {
   warnings: string[]
   scannedAt: number | null
   error: string | null
-  /** True only for the very first load, so refreshes don't blank the table. */
   initialising: boolean
   scanning: boolean
 
-  /** Whether live tracking is running. Paused freezes the list where it is. */
   tracking: boolean
   setTracking: (on: boolean) => void
 
@@ -90,7 +83,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const resetSettings = useCallback(() => setSettings(DEFAULT_SETTINGS), [])
 
-  // A scan can outlive the settings that started it; ignore stale responses.
   const runId = useRef(0)
   const inFlight = useRef(false)
 
@@ -113,14 +105,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [settings.includeUdp])
 
-  // One scan on mount, and again whenever what we scan for changes — even while
-  // tracking is paused, so the list is never stale-by-construction.
   useEffect(() => {
     void refresh()
   }, [refresh])
 
-  // Chained timeouts rather than an interval: a slow scan should delay the next
-  // one, not queue up behind it.
   useEffect(() => {
     if (!tracking) return
     let cancelled = false

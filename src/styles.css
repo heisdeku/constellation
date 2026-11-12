@@ -1,21 +1,23 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-canvas: #0a0c10;
-  --color-surface: #101319;
-  --color-surface-2: #161a22;
-  --color-surface-3: #1d222c;
-  --color-line: #242a35;
-  --color-line-soft: #1b202a;
-  --color-ink: #e8ebf1;
-  --color-ink-dim: #a3acbd;
-  --color-ink-faint: #6b7488;
+  --color-canvas: #121214;
+  --color-surface: #19191c;
+  --color-surface-2: #202024;
+  --color-surface-3: #29292e;
+  --color-line: #27272b;
+  --color-line-soft: #202024;
+  --color-ink: #ededef;
+  --color-ink-dim: #a1a1aa;
+  --color-ink-faint: #909099;
 
   --color-live: #34d399;
   --color-held: #fbbf24;
   --color-danger: #f87171;
   --color-info: #60a5fa;
   --color-violet: #a78bfa;
+  --color-pink: #f472b6;
+  --color-teal: #2dd4bf;
 
   --font-mono:
     'SF Mono', ui-monospace, SFMono-Regular, Menlo, 'JetBrains Mono', monospace;
@@ -23,6 +25,8 @@
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
 
   --radius-card: 0.75rem;
+
+  --ease-continuous: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @layer base {
@@ -44,13 +48,11 @@
     font-size: 13px;
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
-    /* This is a desktop window, not a document — no rubber-band, no text drag. */
     overscroll-behavior: none;
     user-select: none;
     cursor: default;
   }
 
-  /* Selection is opt-in, on the things worth copying. */
   .selectable,
   input {
     user-select: text;
@@ -104,6 +106,13 @@
     @apply border-danger/40 bg-danger/10 text-danger;
   }
 
+  .btn-primary {
+    @apply border-transparent bg-ink text-canvas;
+  }
+  .btn-primary:hover:not(:disabled) {
+    @apply border-transparent bg-white text-canvas;
+  }
+
   .btn-accent {
     @apply border-live/30 bg-live/10 text-live;
   }
@@ -111,8 +120,6 @@
     @apply border-live/50 bg-live/20 text-live;
   }
 
-  /* Tailwind v4 drives scale/translate as their own CSS properties, not `transform`,
-     so the transition must name them explicitly or the popup pops in. */
   .popup {
     @apply z-50 scale-100 rounded-lg border border-line bg-surface-2 p-1 opacity-100
       shadow-2xl shadow-black/60 outline-none
@@ -144,12 +151,11 @@
     @apply w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12.5px]
       text-ink placeholder:text-ink-faint;
   }
-  .field:focus {
-    @apply border-info/60 outline-none;
+  .field:focus-visible {
+    @apply border-info/60;
   }
 }
 
-/* The whole titlebar strip drags the window; interactive children opt out. */
 .drag-region {
   -webkit-app-region: drag;
 }
@@ -172,11 +178,61 @@
   animation: pulse-ring 2.4s ease-out infinite;
 }
 
+::view-transition-group(*) {
+  animation-duration: 300ms;
+  animation-timing-function: var(--ease-continuous);
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+}
+
+::view-transition-group(nav-highlight) {
+  mix-blend-mode: lighten;
+}
+
+.grow-from {
+  transition:
+    opacity 250ms var(--ease-continuous),
+    scale 250ms var(--ease-continuous),
+    translate 250ms var(--ease-continuous);
+}
+.grow-from[data-starting-style],
+.grow-from[data-ending-style] {
+  translate: calc(-50% + var(--from-x, 0px)) calc(-50% + var(--from-y, 0px));
+  scale: 0.2;
+  opacity: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .live-dot {
     animation: none;
   }
   .popup {
     transition: none;
+  }
+  .grow-from {
+    transition: opacity 150ms ease-out;
+  }
+  .grow-from[data-starting-style],
+  .grow-from[data-ending-style] {
+    translate: -50% -50%;
+    scale: 1;
+  }
+  ::view-transition-group(*) {
+    animation-duration: 0s;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 150ms;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --color-line: #5a5a62;
+    --color-line-soft: #46464d;
+    --color-ink-dim: #d4d4d8;
+    --color-ink-faint: #b4b4bc;
   }
 }

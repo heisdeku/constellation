@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { AlertTriangle, Plug, Search, SearchX, X } from 'lucide-react'
+import { AlertTriangle, Pause, Play, Plug, RefreshCw, Search, SearchX, X } from 'lucide-react'
 import { ActionsProvider } from '~/components/actions'
 import { PortDetail } from '~/components/PortDetail'
 import { PortsTable } from '~/components/PortsTable'
-import { Empty, SelectField, cx } from '~/components/ui'
+import { Empty, PageHeader, SelectField, Tip, cx } from '~/components/ui'
 import {
   DEFAULT_SEARCH,
   filterAndSort,
@@ -12,6 +12,8 @@ import {
   type PortsSearch,
   type SortKey,
 } from '~/lib/filter'
+import { formatClock } from '~/lib/format'
+import { useMenu } from '~/lib/menu'
 import { useApp } from '~/lib/store'
 
 export const Route = createFileRoute('/')({
@@ -28,46 +30,54 @@ const PROTO_ITEMS = [
 const SCOPE_ITEMS = [
   { value: 'all', label: 'Any reach' },
   { value: 'loopback', label: 'Local only' },
-  { value: 'lan', label: 'On network' },
+  { value: 'lan', label: 'Network' },
 ] as const
 
 function PortsPage() {
   const search = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
   const { entries, settings, initialising, error, warnings } = useApp()
+  const { tracking, setTracking, scanning, scannedAt, refresh } = useApp()
   const searchRef = useRef<HTMLInputElement>(null)
 
   const setSearch = (patch: Partial<PortsSearch>) =>
-    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
+    navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
+
+  const [closing, setClosing] = useState(false)
+
+  const select = (sel: string | null) => {
+    if (sel === null) {
+      setClosing(true)
+      return
+    }
+    setClosing(false)
+    void setSearch({ sel })
+  }
+
+  const finishClosing = async () => {
+    const id = search.sel
+    setClosing(false)
+    await setSearch({ sel: undefined })
+    if (id) document.querySelector<HTMLElement>(`[data-motion-key="${CSS.escape(id)}"]`)?.focus()
+  }
 
   const visible = useMemo(
     () => filterAndSort(entries, search, settings.hideSystem),
     [entries, search, settings.hideSystem],
   )
 
-  // Keep the panel honest: a selected process can exit between scans.
   const selected = visible.find((e) => e.id === search.sel) ?? null
   useEffect(() => {
     if (search.sel && !initialising && !entries.some((e) => e.id === search.sel)) {
       setSearch({ sel: undefined })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, search.sel, initialising])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
-        e.preventDefault()
-        searchRef.current?.focus()
-        searchRef.current?.select()
-      }
-      if (e.key === 'Escape' && document.activeElement === searchRef.current) {
-        searchRef.current?.blur()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  useMenu('find', () => {
+    searchRef.current?.focus()
+    searchRef.current?.select()
+  })
+  useMenu('rescan', () => void refresh())
 
   const onSort = (key: SortKey) =>
     setSearch(
@@ -81,9 +91,54 @@ function PortsPage() {
 
   return (
     <ActionsProvider>
-      <div className="flex h-full">
+      <div
+        className="relative flex h-full"
+        onKeyDown={(e) => {
+          if (e.key !== 'Escape' || !search.sel || closing) return
+          if (!e.currentTarget.contains(e.target as Node)) return
+          select(null)
+        }}
+      >
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-4 py-2.5">
+          <PageHeader
+            title="Ports"
+            subtitle={
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={cx('size-[6px] rounded-full', tracking ? 'live-dot bg-live' : 'bg-held')}
+                />
+                {entries.length} listening
+                {scannedAt && <span className="tabular-nums">· updated {formatClock(scannedAt)}</span>}
+              </span>
+            }
+            actions={
+              <>
+                <Tip content="Rescan now">
+                  <button
+                    type="button"
+                    onClick={() => void refresh()}
+                    disabled={scanning}
+                    aria-label="Rescan now"
+                    className="btn btn-ghost px-1.5"
+                  >
+                    <RefreshCw size={13} className={scanning ? 'animate-spin' : undefined} />
+                  </button>
+                </Tip>
+                <Tip content={tracking ? 'Stop rescanning every few seconds' : 'Rescan every few seconds'}>
+                  <button
+                    type="button"
+                    onClick={() => setTracking(!tracking)}
+                    aria-pressed={!tracking}
+                    className={cx('btn', !tracking && 'border-held/40 bg-held/10 text-held')}
+                  >
+                    {tracking ? <Pause size={12} /> : <Play size={12} />}
+                    {tracking ? 'Pause Updates' : 'Resume Updates'}
+                  </button>
+                </Tip>
+              </>
+            }
+          />
+          <div className="flex shrink-0 items-center gap-2 border-b border-line px-6 pb-4">
             <div className="relative min-w-0 flex-1">
               <Search
                 size={13}
@@ -94,6 +149,12 @@ function PortsPage() {
                 type="text"
                 value={search.q}
                 onChange={(e) => setSearch({ q: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Escape') return
+                  e.stopPropagation()
+                  if (search.q) setSearch({ q: '' })
+                  else e.currentTarget.blur()
+                }}
                 placeholder="Search port, process, project or PID…"
                 aria-label="Search ports"
                 className="field pl-8 pr-8"
@@ -103,7 +164,7 @@ function PortsPage() {
                   type="button"
                   aria-label="Clear search"
                   onClick={() => setSearch({ q: '' })}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-faint hover:text-ink"
+                  className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-ink-faint hover:text-ink"
                 >
                   <X size={13} />
                 </button>
@@ -156,7 +217,6 @@ function PortsPage() {
               <Empty
                 icon={<Plug size={26} />}
                 title="Scanning ports…"
-                body="Reading listening sockets from lsof."
               />
             ) : error && entries.length === 0 ? (
               <Empty
@@ -172,15 +232,15 @@ function PortsPage() {
                   filtersActive
                     ? 'Try a different search, or clear the filters.'
                     : settings.hideSystem
-                      ? 'Nothing of yours is listening. System-owned ports are hidden — turn that off in Settings to see them.'
+                      ? "Nothing of yours is listening. To see other users' ports, turn off Hide other users' ports in Settings."
                       : 'Nothing on this machine is listening for connections.'
                 }
               />
             ) : (
               <PortsTable
                 entries={visible}
-                selectedId={search.sel ?? null}
-                onSelect={(sel) => setSearch({ sel: sel ?? undefined })}
+                selectedId={closing ? null : (search.sel ?? null)}
+                onSelect={select}
                 sort={search.sort}
                 dir={search.dir}
                 onSort={onSort}
@@ -188,7 +248,7 @@ function PortsPage() {
             )}
           </div>
 
-          <footer className="flex h-7 shrink-0 items-center justify-between border-t border-line bg-surface px-4 text-[11px] text-ink-faint">
+          <footer className="flex h-8 shrink-0 items-center justify-between border-t border-line px-6 text-[11px] text-ink-faint">
             <span>
               {visible.length} of {entries.length} shown
               {settings.hideSystem && ' · system ports hidden'}
@@ -198,7 +258,12 @@ function PortsPage() {
         </div>
 
         {selected && (
-          <PortDetail entry={selected} onClose={() => setSearch({ sel: undefined })} />
+          <PortDetail
+            entry={selected}
+            closing={closing}
+            onClose={() => setClosing(true)}
+            onClosed={() => void finishClosing()}
+          />
         )}
       </div>
     </ActionsProvider>

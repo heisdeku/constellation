@@ -1,6 +1,3 @@
-//! Building a snapshot of the process table, and working out where each process
-//! "lives" on disk so the UI can link straight to that folder.
-
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -12,17 +9,12 @@ use crate::sh;
 const PS_TIMEOUT: Duration = Duration::from_millis(4000);
 const LSOF_TIMEOUT: Duration = Duration::from_millis(6000);
 
-/// How a process's working directory maps onto a project on disk.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectInfo {
-    /// Absolute path to the project root.
     pub path: String,
-    /// Display name — the `name` field from package.json where available, else the folder name.
     pub name: String,
-    /// Which marker identified it: node, rust, go, python, ruby, php, deno, dart, git.
     pub kind: String,
-    /// The file/folder that identified the root, e.g. "package.json".
     pub marker: String,
 }
 
@@ -31,37 +23,23 @@ pub struct ProjectInfo {
 pub struct ProcessInfo {
     pub pid: i32,
     pub ppid: i32,
-    /// Short display name, e.g. "node" or "Google Chrome".
     pub name: String,
-    /// Absolute path to the executable.
     pub exe: String,
-    /// Full command line including arguments.
     pub command: String,
     pub user: String,
-    /// running | sleeping | idle | paused | zombie | waiting | unknown
     pub state: String,
-    /// True when the kernel has the process suspended (ps state `T`) — i.e. we paused it.
     pub paused: bool,
     pub cpu: f32,
     pub mem: f32,
-    /// Seconds since the process started.
     pub uptime_seconds: u64,
-    /// Current working directory, when readable.
     pub cwd: Option<String>,
-    /// False when the cwd has since been deleted — a stale dev server from a removed
-    /// worktree still holds its port, and there is nothing to open in Finder.
     pub cwd_exists: bool,
     pub project: Option<ProjectInfo>,
-    /// For GUI apps, the enclosing `.app` bundle path.
     pub app_bundle: Option<String>,
-    /// False for processes owned by other users — signalling them would fail with EPERM.
     pub owned_by_me: bool,
-    /// True for processes we refuse to signal (launchd, WindowServer, ourselves, …).
     pub protected: bool,
 }
 
-/// Processes that keep the machine usable. Refusing these is cheaper than explaining
-/// to someone why their session died.
 const PROTECTED_NAMES: &[&str] = &[
     "launchd",
     "kernel_task",
@@ -86,7 +64,6 @@ const PROTECTED_NAMES: &[&str] = &[
     "Finder",
 ];
 
-/// Manifest files that mark a project root, in the order we trust them.
 const PROJECT_MARKERS: &[(&str, &str)] = &[
     ("package.json", "node"),
     ("Cargo.toml", "rust"),
@@ -129,8 +106,6 @@ fn ps_snapshot() -> Result<
             PS_TIMEOUT,
         )
     });
-    // `comm` and `command` are read separately: both can contain spaces, so each
-    // needs to be the last (greedy) column of its own invocation.
     let comms = std::thread::spawn(|| sh::run("ps", &["-axo", "pid=,comm="], PS_TIMEOUT));
     let cmdlines = sh::run("ps", &["-axo", "pid=,command="], PS_TIMEOUT)?;
 
@@ -203,7 +178,6 @@ fn cwds_for(pids: &[i32]) -> HashMap<i32, String> {
         .map(|p| p.to_string())
         .collect::<Vec<_>>()
         .join(",");
-    // -w suppresses the warnings lsof emits for processes we cannot inspect.
     let Ok(out) = sh::run("lsof", &["-a", "-w", "-p", &list, "-d", "cwd", "-F", "pn"], LSOF_TIMEOUT)
     else {
         return map;
@@ -211,8 +185,6 @@ fn cwds_for(pids: &[i32]) -> HashMap<i32, String> {
 
     let mut current: Option<i32> = None;
     for line in out.lines() {
-        // Field output is `<tag><value>`; skip anything that isn't shaped that way
-        // rather than risk slicing off a char boundary.
         let Some(tag) = line.get(..1) else { continue };
         let value = &line[1..];
         match tag {
@@ -233,7 +205,6 @@ fn detect_project(cwd: &str) -> Option<ProjectInfo> {
     let home = std::env::var("HOME").unwrap_or_default();
     let mut dir: Option<&Path> = Some(Path::new(cwd));
 
-    // A process started at `/` or in `$HOME` isn't "in a project" in any useful sense.
     for _ in 0..24 {
         let d = dir?;
         if d == Path::new("/") || (!home.is_empty() && d == Path::new(&home)) {
@@ -428,7 +399,6 @@ mod tests {
         let exe = "/Applications/Docker.app/Contents/MacOS/com.docker.backend";
         assert_eq!(app_bundle_of(exe).as_deref(), Some("/Applications/Docker.app"));
         assert_eq!(display_name(exe, "?"), "Docker");
-        // Plain binaries fall back to the file name.
         assert_eq!(app_bundle_of("/usr/local/bin/ollama"), None);
         assert_eq!(display_name("/usr/local/bin/ollama", "?"), "ollama");
     }

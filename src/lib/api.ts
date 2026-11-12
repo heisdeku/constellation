@@ -60,50 +60,97 @@ export interface ControlResult {
   message: string
 }
 
-/** The Tauri webview injects this; a plain browser never will. */
-export const isDesktopShell = (): boolean =>
-  typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+export type StorageSafety = 'safe' | 'review' | 'keep'
 
-const NO_SHELL =
-  'Port Tracker is running as a plain web page, so it has no access to your ' +
-  'processes. Stop `pnpm dev` and run `pnpm app` instead — that launches the ' +
-  'desktop app, which is what talks to lsof and ps.'
+export type StorageDisposal = 'delete' | 'trash' | 'none'
 
-/**
- * Every backend call goes through here so that running the UI outside the desktop
- * shell reports what's wrong instead of throwing `undefined is not an object`.
- */
-function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isDesktopShell()) return Promise.reject(new Error(NO_SHELL))
-  return invoke<T>(cmd, args)
+export type StorageGroup =
+  | 'packages'
+  | 'mobile'
+  | 'apps'
+  | 'hidden'
+  | 'projects'
+  | 'applications'
+  | 'documents'
+  | 'icloud'
+  | 'messages'
+  | 'photos'
+
+export interface StorageTarget {
+  id: string
+  group: StorageGroup
+  label: string
+  detail: string
+  path: string
+  safety: StorageSafety
+  disposal: StorageDisposal
+  browsable: boolean
+  modifiedMs: number | null
+}
+
+export interface Measurement {
+  apparentBytes: number
+  reclaimableBytes: number
+  unreadable: number
+}
+
+export interface DiskUsage {
+  totalBytes: number
+  freeBytes: number
+  systemBytes: number
+}
+
+export interface CleanResult {
+  removed: number
+  protectedItems: number
+  failures: string[]
 }
 
 export const scanPorts = (includeUdp: boolean) =>
-  call<ScanResult>('scan_ports', { includeUdp })
+  invoke<ScanResult>('scan_ports', { includeUdp })
 
 export const pauseProcess = (pid: number, expectedName: string) =>
-  call<ControlResult>('pause_process', { pid, expectedName })
+  invoke<ControlResult>('pause_process', { pid, expectedName })
 
 export const resumeProcess = (pid: number, expectedName: string) =>
-  call<ControlResult>('resume_process', { pid, expectedName })
+  invoke<ControlResult>('resume_process', { pid, expectedName })
 
 export const stopProcess = (
   pid: number,
   expectedName: string,
   force: boolean,
   graceMs: number,
-) => call<ControlResult>('stop_process', { pid, expectedName, force, graceMs })
+) => invoke<ControlResult>('stop_process', { pid, expectedName, force, graceMs })
 
 export const revealInFinder = (path: string) =>
-  call<void>('reveal_in_finder', { path })
+  invoke<void>('reveal_in_finder', { path })
 
-export const openPath = (path: string) => call<void>('open_path', { path })
+export const openPath = (path: string) => invoke<void>('open_path', { path })
 
 export const openInTerminal = (path: string) =>
-  call<void>('open_in_terminal', { path })
+  invoke<void>('open_in_terminal', { path })
 
 export const openInEditor = (path: string) =>
-  call<string>('open_in_editor', { path })
+  invoke<string>('open_in_editor', { path })
+
+export const diskUsage = () => invoke<DiskUsage>('disk_usage')
+
+export const fullDiskAccess = () => invoke<boolean>('full_disk_access')
+
+export const openPrivacySettings = () => invoke<void>('open_privacy_settings')
+
+/** Without `includeGuarded`, folders macOS would prompt for are left out. */
+export const storageTargets = (includeGuarded: boolean) =>
+  invoke<StorageTarget[]>('storage_targets', { includeGuarded })
+
+export const storageChildren = (path: string) =>
+  invoke<StorageTarget[]>('storage_children', { path })
+
+export const measureTarget = (id: string) =>
+  invoke<Measurement>('measure_target', { id })
+
+export const cleanTarget = (id: string) =>
+  invoke<CleanResult>('clean_target', { id })
 
 /** Tauri rejects with a plain string; normalise it for display. */
 export function errorMessage(e: unknown): string {

@@ -8,6 +8,7 @@ import {
   Terminal,
   X,
 } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import type { PortEntry } from '~/lib/api'
 import {
   SCOPE_HINT,
@@ -19,27 +20,70 @@ import {
   wellKnownName,
 } from '~/lib/format'
 import { useApp } from '~/lib/store'
+import { reducedMotion } from '~/lib/motion'
 import { useActions } from './actions'
 import { Chip, StateDot, Tip, cx } from './ui'
 
+const SLIDE_IN: KeyframeAnimationOptions = { duration: 280, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }
+const SLIDE_OUT: KeyframeAnimationOptions = {
+  duration: 200,
+  easing: 'cubic-bezier(0.4, 0, 1, 1)',
+  fill: 'forwards',
+}
+
+/**
+ * Slides in from the right edge when opened. When `closing` is set it lifts out of the
+ * layout, so the table widens underneath at once, slides away, then calls `onClosed`.
+ */
 export function PortDetail({
   entry,
+  closing,
   onClose,
+  onClosed,
 }: {
   entry: PortEntry
+  closing: boolean
   onClose: () => void
+  onClosed: () => void
 }) {
-  const { home } = useApp()
+  const { home, settings } = useApp()
   const actions = useActions()
   const p = entry.process
   const folder = folderFor(entry)
   const service = wellKnownName(entry.port)
   const args = commandArgs(p.command, p.exe)
+  const heading = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    heading.current?.focus({ preventScroll: true })
+    if (reducedMotion()) return
+    panel.current?.animate([{ transform: 'translateX(100%)' }, { transform: 'none' }], SLIDE_IN)
+  }, [])
+
+  useEffect(() => {
+    if (!closing) return
+    const el = panel.current
+    if (!el || reducedMotion()) {
+      onClosed()
+      return
+    }
+    const slide = el.animate([{ transform: 'none' }, { transform: 'translateX(100%)' }], SLIDE_OUT)
+    slide.finished.then(onClosed, () => {})
+    return () => slide.cancel()
+  }, [closing])
 
   return (
-    <aside className="flex h-full w-[340px] shrink-0 flex-col border-l border-line bg-surface">
+    <aside
+      ref={panel}
+      aria-label={`Port ${entry.port}`}
+      className={cx(
+        'flex h-full w-[340px] shrink-0 flex-col border-l border-line bg-surface',
+        closing && 'pointer-events-none absolute inset-y-0 right-0 z-10',
+      )}
+    >
       <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-4">
-        <div className="flex items-baseline gap-2">
+        <div ref={heading} tabIndex={-1} className="flex items-baseline gap-2 outline-none">
           <span className="font-mono text-[15px] font-semibold tabular-nums text-ink">
             {entry.port}
           </span>
@@ -51,7 +95,7 @@ export function PortDetail({
           type="button"
           onClick={onClose}
           aria-label="Close details"
-          className="btn btn-ghost px-1.5"
+          className="btn btn-ghost -mr-1.5 size-7 p-0"
         >
           <X size={13} />
         </button>
@@ -160,8 +204,7 @@ export function PortDetail({
             </>
           ) : (
             <p className="text-[11.5px] leading-relaxed text-ink-faint">
-              No working directory available — macOS only exposes it for processes you
-              own.
+              macOS only shows the folder for processes you own.
             </p>
           )}
         </section>
@@ -172,7 +215,7 @@ export function PortDetail({
             <button
               type="button"
               aria-label="Copy command"
-              className="btn btn-ghost px-1"
+              className="btn btn-ghost size-6 p-0"
               onClick={() => void actions.copy(p.command, 'Command')}
             >
               <Copy size={11} />
@@ -201,7 +244,7 @@ export function PortDetail({
           onClick={() => actions.stop(entry)}
           className="btn btn-danger flex-1"
         >
-          <Square size={11} /> Stop
+          <Square size={11} /> {settings.confirmStop ? 'Stop…' : 'Stop'}
         </button>
       </footer>
     </aside>
@@ -235,7 +278,7 @@ function Row({
           <button
             type="button"
             aria-label={`Copy ${label}`}
-            className="ml-1.5 align-middle text-ink-faint hover:text-ink"
+            className="-my-1 ml-1 inline-flex size-5 items-center justify-center rounded align-middle text-ink-faint hover:bg-surface-3 hover:text-ink"
             onClick={() => void onCopy(value, label)}
           >
             <Copy size={10} />

@@ -1,7 +1,6 @@
 import { Toast } from '@base-ui-components/react/toast'
 import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react'
 
-/** Re-exported so callers don't need to know which toast library is underneath. */
 export const useToast = Toast.useToastManager
 
 const ICONS: Record<string, React.ReactNode> = {
@@ -23,6 +22,7 @@ function ToastList() {
         'transition-all duration-300 ease-out',
         'data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0',
         'data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0',
+        'motion-reduce:data-[starting-style]:translate-x-0 motion-reduce:data-[ending-style]:translate-x-0',
       ].join(' ')}
     >
       <div className="flex gap-2.5">
@@ -37,7 +37,7 @@ function ToastList() {
       </div>
       <Toast.Close
         aria-label="Dismiss"
-        className="absolute right-2 top-2 rounded p-1 text-ink-faint hover:bg-surface-3 hover:text-ink"
+        className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded text-ink-faint hover:bg-surface-3 hover:text-ink"
       >
         <X size={12} />
       </Toast.Close>

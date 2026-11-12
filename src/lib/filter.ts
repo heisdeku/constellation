@@ -64,7 +64,6 @@ export function filterAndSort(
   hideSystem: boolean,
 ): PortEntry[] {
   const q = search.q.trim().toLowerCase()
-  // A bare number should match the port itself, not any command that mentions it.
   const numeric = /^\d+$/.test(q) ? Number(q) : null
 
   const filtered = entries.filter((e) => {
@@ -86,7 +85,6 @@ export function filterAndSort(
       case 'project': {
         const an = folderFor(a)?.label ?? ''
         const bn = folderFor(b)?.label ?? ''
-        // Entries with no folder sort last regardless of direction.
         if (!an !== !bn) return an ? -1 : 1
         return factor * an.localeCompare(bn) || byPort(a, b)
       }

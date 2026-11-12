@@ -1,9 +1,5 @@
 import type { PortEntry, PortScope } from './api'
 
-/**
- * Ports common enough that showing the service name saves a lookup. Deliberately
- * short — a wrong guess is worse than no guess.
- */
 const WELL_KNOWN: Record<number, string> = {
   22: 'SSH',
   25: 'SMTP',
@@ -42,14 +38,14 @@ export const wellKnownName = (port: number): string | null =>
 
 export const SCOPE_LABEL: Record<PortScope, string> = {
   loopback: 'Local only',
-  lan: 'On your network',
-  specific: 'Bound address',
+  lan: 'Network',
+  specific: 'One address',
 }
 
 export const SCOPE_HINT: Record<PortScope, string> = {
-  loopback: 'Bound to localhost — only this machine can reach it.',
-  lan: 'Bound to all interfaces — anything on your network can reach it.',
-  specific: 'Bound to one specific address.',
+  loopback: 'Only this Mac can reach it.',
+  lan: 'Any device on your network can reach it.',
+  specific: 'Reachable at one specific address.',
 }
 
 export function formatUptime(seconds: number): string {
@@ -60,6 +56,25 @@ export function formatUptime(seconds: number): string {
   if (h < 24) return `${h}h ${m % 60}m`
   const d = Math.floor(h / 24)
   return `${d}d ${h % 24}h`
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1000) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unit = -1
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000
+    unit += 1
+  }
+  return `${value.toFixed(value >= 100 || unit < 2 ? 0 : 1)} ${units[unit]}`
+}
+
+export function formatAge(ms: number): string {
+  const days = Math.floor((Date.now() - ms) / 86_400_000)
+  if (days < 1) return 'Changed today'
+  if (days < 60) return `Changed ${days}d ago`
+  return `Changed ${Math.floor(days / 30)}mo ago`
 }
 
 export function formatClock(ms: number): string {
@@ -79,17 +94,14 @@ export interface FolderRef {
   path: string
   label: string
   kind: 'project' | 'cwd' | 'app'
-  /** The directory is gone — typically a deleted worktree whose server is still running. */
   missing: boolean
 }
 
 /** The best folder to link to for an entry, and what it represents. */
 export function folderFor(entry: PortEntry): FolderRef | null {
   const p = entry.process
-  // A project root was found by reading a manifest off disk, so it exists by construction.
   if (p.project)
     return { path: p.project.path, label: p.project.name, kind: 'project', missing: false }
-  // Only an explicit `false` means deleted — never infer it from a missing field.
   if (p.cwd)
     return { path: p.cwd, label: basename(p.cwd), kind: 'cwd', missing: p.cwdExists === false }
   if (p.appBundle)

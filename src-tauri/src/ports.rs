@@ -1,5 +1,3 @@
-//! Scanning listening sockets and joining them to the process that owns them.
-
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -22,19 +20,14 @@ pub struct DockerInfo {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortEntry {
-    /// Stable across scans, so the UI can keep a row selected while it refreshes.
     pub id: String,
-    /// "TCP" or "UDP".
     pub protocol: String,
     pub port: u16,
-    /// Every address this pid bound for this port — IPv4 and IPv6 collapse into one row.
     pub addresses: Vec<String>,
     pub ip_versions: Vec<String>,
-    /// loopback | lan | specific — how far the socket is reachable.
     pub scope: String,
     pub pid: i32,
     pub process: ProcessInfo,
-    /// Set when the port is published by a Docker container rather than a plain process.
     pub docker: Option<DockerInfo>,
 }
 
@@ -43,7 +36,6 @@ pub struct PortEntry {
 pub struct ScanResult {
     pub entries: Vec<PortEntry>,
     pub scanned_at: u64,
-    /// Non-fatal problems (e.g. UDP scan failed) surfaced to the UI rather than swallowed.
     pub warnings: Vec<String>,
 }
 
@@ -66,8 +58,6 @@ fn parse_lsof(out: &str) -> Vec<RawSocket> {
     let mut protocol = String::new();
 
     for line in out.lines() {
-        // Field output is `<tag><value>`; skip anything that isn't shaped that way
-        // rather than risk slicing off a char boundary.
         let Some(tag) = line.get(..1) else { continue };
         let value = &line[1..];
         match tag {
@@ -83,7 +73,6 @@ fn parse_lsof(out: &str) -> Vec<RawSocket> {
             "t" => ip_version = value.to_string(),
             "P" => protocol = value.to_string(),
             "n" => {
-                // Connected sockets (`a->b`) are not listeners; skip them.
                 if value.contains("->") {
                     continue;
                 }
@@ -91,7 +80,6 @@ fn parse_lsof(out: &str) -> Vec<RawSocket> {
                     continue;
                 };
                 let Ok(port) = port.parse::<u16>() else { continue };
-                // lsof brackets specific IPv6 addresses: `[::1]:8080`.
                 let addr = addr.trim_start_matches('[').trim_end_matches(']');
                 sockets.push(RawSocket {
                     pid,
@@ -160,7 +148,6 @@ fn docker_port_map() -> HashMap<u16, DockerInfo> {
             name: fields[1].to_string(),
             image: fields[2].to_string(),
         };
-        // e.g. "0.0.0.0:5432->5432/tcp, :::5432->5432/tcp"
         for mapping in fields[3].split(',') {
             let Some((host, _)) = mapping.trim().split_once("->") else {
                 continue;
@@ -223,12 +210,9 @@ pub fn scan(include_udp: bool) -> Result<ScanResult, String> {
     let pids: HashSet<i32> = sockets.iter().map(|s| s.pid).collect();
     let processes = proc::describe(&pids)?;
 
-    // Collapse the IPv4/IPv6 pair (and any extra bind addresses) into one row per
-    // protocol+port+pid.
     let mut grouped: HashMap<(String, u16, i32), PortEntry> = HashMap::new();
     for s in sockets {
         let Some(process) = processes.get(&s.pid) else {
-            // Process exited between the lsof call and the ps call.
             continue;
         };
         let key = (s.protocol.clone(), s.port, s.pid);
@@ -280,8 +264,6 @@ pub fn scan(include_udp: bool) -> Result<ScanResult, String> {
 mod tests {
     use super::*;
 
-    /// Real `lsof -nP -w -iTCP -sTCP:LISTEN -F pftPn` shape: one `p` section per
-    /// process, one `f` section per socket.
     const SAMPLE: &str = "p748\nf23\ntIPv4\nPTCP\nn127.0.0.1:53454\nf24\ntIPv6\nPTCP\nn[::1]:53454\np806\nf11\ntIPv4\nPTCP\nn*:50215\n";
 
     #[test]
@@ -311,7 +293,6 @@ mod tests {
 
     #[test]
     fn tolerates_blank_and_malformed_lines() {
-        // Must not panic on empty lines or unparseable ports.
         let out = parse_lsof("\np1\n\nf3\ntIPv4\nPTCP\nnnot-an-address\nn*:notaport\n");
         assert!(out.is_empty());
     }
@@ -322,7 +303,6 @@ mod tests {
         assert_eq!(scope_of(&["*".into()]), "lan");
         assert_eq!(scope_of(&["0.0.0.0".into()]), "lan");
         assert_eq!(scope_of(&["192.168.1.5".into()]), "specific");
-        // A wildcard anywhere in the set wins: it is reachable from the network.
         assert_eq!(scope_of(&["127.0.0.1".into(), "*".into()]), "lan");
     }
 }

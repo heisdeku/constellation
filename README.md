@@ -1,179 +1,180 @@
 <div align="center">
 
-<img src="src-tauri/icons/128x128@2x.png" width="104" alt="Port Tracker">
+<img src="src-tauri/icons/128x128@2x.png" width="104" alt="marè">
 
-# Port Tracker
+# marè
 
-**See every port on your Mac, what owns it, and where it lives.**
+**See what's using your Mac's ports and disk, and clear space without breaking anything.**
 
-A desktop app that lists every listening port, identifies the process behind it,
-links straight to that project's folder, and lets you pause or stop it.
-
-Tauri v2 · Rust · React 19 · TanStack Router · Tailwind v4 · Base UI
+[Install](#install) · [Ports](#ports) · [Storage](#storage) · [Privacy](#privacy-and-permissions) · [Development](docs/development.md)
 
 </div>
 
-![The port list](docs/images/ports.png)
+![The Storage overview, using the same categories as System Settings](docs/images/storage.png)
 
-## Why
+System Settings shows how much space System Data takes, but not what's in it, and
+offers no way to remove any of it. marè breaks it down into the caches,
+package stores and leftover files behind it, shows what deleting each one would really
+free, and clears the ones that rebuild themselves.
 
-`lsof -i :3000` tells you a PID. It doesn't tell you *which project* that is.
+It also lists every listening port on your Mac with the project folder behind it, so
+"what's on 5173 and can I stop it?" takes one glance instead of three commands. Press
+⌘K from anywhere to jump to a port, a storage category or a page.
 
-If you run several dev servers, a few worktrees and some containers, the answer
-to "what's on 5173 and can I kill it?" takes three commands and a guess. Port
-Tracker answers it in one glance — and the folder name is the answer, not the PID.
+![Search, opened with ⌘K](docs/images/search.png)
 
-## What it does
+## Install
 
-- **Every listening port, live.** TCP by default, UDP opt-in, rescanned on an
-  interval you choose. IPv4 and IPv6 bindings for the same port collapse into one row.
-- **Identifies the owner.** Process name, full command line, PID, user, CPU, memory
-  and uptime.
-- **Links to the folder.** Walks up from the process's working directory to find the
-  project root — `package.json`, `Cargo.toml`, `go.mod`, `.git` and ten more markers —
-  and reads the real package name. Reveal in Finder, open in Terminal, or open in your editor.
-- **Flags dead folders.** A dev server from a deleted worktree keeps its port. Those
-  rows are marked, because there is nothing left to open.
-- **Names containers.** Docker-published ports show the container and image instead of
-  the opaque `com.docker.backend` process.
-- **Shows reach.** Whether a port is loopback-only or exposed to your whole network.
-- **Pause, resume, stop.** Detailed below.
+marè runs on macOS 10.15 or later, on Apple Silicon and Intel.
 
-## Pause vs. stop
+### With the install script
 
-This is the part worth understanding, because "pause" is not a UI state — it is a
-real signal to a real process.
+```bash
+curl -fsSL https://raw.githubusercontent.com/heisdeku/mare/main/scripts/install.sh | bash
+```
 
-| Action | Signal | Effect |
+The script downloads the latest release, checks its SHA-256 checksum against the one
+published with it, and installs the app to `/Applications`. Run it again to update.
+
+To install a specific version, or to remove the app:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/heisdeku/mare/main/scripts/install.sh | bash -s -- --version 0.1.0
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/heisdeku/mare/main/scripts/install.sh | bash -s -- --uninstall
+```
+
+### With Homebrew
+
+```bash
+brew tap heisdeku/tap
+```
+
+```bash
+brew trust --tap heisdeku/tap
+```
+
+```bash
+brew install --cask mare
+```
+
+Homebrew asks you to trust a tap before it installs from one that isn't official.
+
+### From the disk image
+
+Download the `.dmg` from the [latest release](https://github.com/heisdeku/mare/releases/latest)
+and drag marè into Applications.
+
+marè isn't notarised by Apple yet, so the first time you open a copy
+downloaded in a browser, macOS says it can't check the app for malware. To open it:
+
+1. Open marè once and close the warning.
+2. Open System Settings › Privacy & Security.
+3. Under Security, click Open Anyway next to marè, then confirm.
+
+Or remove the download flag in Terminal, which has the same effect:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/marè.app"
+```
+
+The install script and Homebrew do this for you, so their installs open without a
+warning.
+
+## Ports
+
+![The port list with one port's details open](docs/images/ports.png)
+
+Every listening port on the Mac, with the process behind it and the project it runs from.
+
+- Each row shows the process name, command line, PID, CPU and memory. IPv4 and IPv6
+  bindings of the same port share one row.
+- The folder comes from the process's working directory, walked up to the nearest
+  `package.json`, `Cargo.toml`, `go.mod` or similar. Open it in Finder, Terminal or
+  your editor.
+- A dev server whose worktree was deleted still holds its port. Its folder is marked
+  Deleted.
+- Docker ports show the container and image instead of `com.docker.backend`.
+- Each port says whether only this Mac can reach it, or your whole network.
+
+Pause and stop send real signals to the process:
+
+| Action | Signal | What happens |
 | --- | --- | --- |
-| **Pause** | `SIGSTOP` | Freezes the process. It stops doing work but **keeps the port bound**, so nothing else can claim it. |
-| **Resume** | `SIGCONT` | Continues from exactly where it stopped. |
-| **Stop** | `SIGTERM` | Asks it to shut down and release the port. |
-| **Force stop** | `SIGKILL` | Only after `SIGTERM` is ignored, and only as a separate, explicit click. |
+| Pause | `SIGSTOP` | The process freezes but keeps its port, so nothing else can take it. |
+| Resume | `SIGCONT` | It carries on from where it stopped. |
+| Stop | `SIGTERM` | It shuts down and releases the port. |
+| Force stop | `SIGKILL` | Offered only after a process ignores Stop. |
 
-Pausing is the useful one: a Next.js dev server you aren't looking at still burns CPU
-and watches the filesystem. Freeze it, keep the port, thaw it when you come back.
+Pause a dev server you aren't using right now. It stops using CPU and keeps its port
+until you resume it.
 
-![Details for a single port](docs/images/detail.png)
+marè won't signal macOS's own critical processes, processes run by other
+users, or itself. It also checks that the PID still belongs to the process you picked,
+so a recycled PID is never hit.
 
-## Safety
+## Storage
 
-Signalling other people's processes is easy to get wrong, so the rules are strict:
+![System Data broken down into what can be cleared](docs/images/storage-category.png)
 
-- PID 1 and below, and Port Tracker itself, are never signalled.
-- Critical macOS processes are protected by name — `launchd`, `WindowServer`,
-  `loginwindow`, `Finder`, `coreaudiod` and others.
-- Processes owned by another user are read-only. macOS would reject the signal
-  anyway, so the controls are disabled rather than left to fail.
-- Every signal re-checks that the PID still refers to the process you selected, so a
-  recycled PID cannot be hit by mistake.
-- `SIGKILL` is never sent automatically.
-- Losing the race — the process exits on its own between the check and the signal —
-  is reported as success, not as an error.
+Storage uses the same categories as System Settings. Open one to see what's inside,
+and open your own folders as far down as you need.
 
-## Running it
-
-```bash
-pnpm install
-pnpm app
-```
-
-`pnpm app` runs `tauri dev`, which starts Vite and the Rust app together.
-
-> `pnpm dev` alone only serves the web UI. It has no backend, so it cannot read
-> ports — the app will tell you so if you try.
-
-### Installing it
-
-`pnpm app` runs a bare debug binary straight from the build directory — it never
-becomes a `.app`, so it won't appear in `/Applications`, Spotlight or the Dock's
-"keep" list. To get a real application:
-
-```bash
-pnpm app:build
-```
-
-That produces both a bundle and a disk image:
-
-```
-src-tauri/target/release/bundle/macos/Port Tracker.app
-src-tauri/target/release/bundle/dmg/Port Tracker_0.1.0_aarch64.dmg
-```
-
-Copy the `.app` into `/Applications` (or open the `.dmg` and drag it there):
-
-```bash
-cp -R "src-tauri/target/release/bundle/macos/Port Tracker.app" /Applications/
-```
-
-The bundle is ad-hoc signed, which is enough to run locally without a Gatekeeper
-prompt. Distributing it to other Macs would need a Developer ID signature and
-notarisation.
-
-For a quick installable build without release optimisation, `pnpm tauri build --debug`
-bundles the existing debug artifacts in under a minute.
-
-### Requirements
-
-- macOS — the scanner shells out to `lsof`, `ps` and `open`
-- Node 20+ and pnpm
-- Rust stable — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-
-No admin rights, no background daemon, no network access. Everything runs as you,
-on demand, and nothing leaves the machine.
-
-## How the scan works
-
-Six processes per scan, run in parallel, each with a hard timeout so a stale network
-mount can't hang the window.
-
-| Step | Command |
+| Category | What you can do |
 | --- | --- |
-| Listening sockets | `lsof -nP -w -iTCP -sTCP:LISTEN -F pftPn` |
-| UDP sockets (opt-in) | `lsof -nP -w -iUDP -F pftPn` |
-| Process stats | `ps -axo pid=,ppid=,state=,user=,%cpu=,%mem=,etime=` |
-| Executable path | `ps -axo pid=,comm=` |
-| Command line | `ps -axo pid=,command=` |
-| Working directory | `lsof -a -w -p <pids> -d cwd -F pn` |
-| Containers | `docker ps` — only when a Docker process is actually present |
+| Developer, System Data | Delete. These rebuild themselves, so they skip the Trash. |
+| Applications, Documents, iCloud Drive | Move to the Trash, where Put Back works. The space returns when you empty the Trash. |
+| Messages, Photos | View only, with a button to open the app. Removing files from inside their libraries corrupts them. |
+| macOS | View only. |
 
-`comm` and `command` need separate `ps` calls because both can contain spaces, so
-each has to be the last column of its own invocation.
+Sizes show what deleting would free, which is often much less than Finder or `du`
+reports. APFS lets files share disk blocks, and a shared block only comes back once
+nothing uses it. On one Mac, Chrome had left 69 copies of itself behind after crashes.
+`du` counted them as 118 GB; deleting them all freed 2.3 GB, and that's the number
+marè shows.
 
-![Settings](docs/images/settings.png)
+Each item is marked:
 
-## Tests
+| Mark | Meaning |
+| --- | --- |
+| Safe | Rebuilds itself. The cost is a slower next launch or install. |
+| Review | Check it first. You may not be able to get it back by reinstalling. |
+| Trash | Goes to the Trash, so you can put it back. |
+| Keep | Counted, but can't be removed here. |
 
-```bash
-cd src-tauri && cargo test
-```
+Nothing is selected until you select it, and every clean shows the full list before
+anything is removed. It also refuses to touch:
 
-Unit tests cover the `lsof` field parser, `ps` elapsed-time and column splitting,
-process-state mapping, `.app` bundle detection and project-root walking against fixed
-samples. Two integration tests run a real scan of the host machine and assert the
-whole pipeline holds — including that `cwd_exists` matches the filesystem.
+- your home Library, dotfiles such as `~/.ssh`, the inside of `.git` folders and photo
+  libraries
+- a project's dependencies while that project has a server running
+- an app that's still open
+- folders macOS protects with System Integrity Protection
+- temporary files changed in the last three days
 
-## Layout
+## Privacy and permissions
 
-```
-src/
-  routes/          TanStack Router file routes (__root, index, settings)
-  components/      Table, detail panel, actions provider, Base UI wrappers
-  lib/             Tauri bindings, filtering/sorting, formatting, app store
-src-tauri/src/
-  lib.rs           Tauri command surface
-  ports.rs         lsof parsing, grouping, Docker enrichment
-  proc.rs          ps snapshot, cwd resolution, project-root detection
-  control.rs       Signals, and the Finder/Terminal/editor jump-offs
-  sh.rs            Subprocess runner with timeouts
-docs/icon.svg      Icon artwork, with regeneration instructions
-```
+marè makes no network requests. It runs as you, with no admin password and
+no background process, and reads your Mac only while it's open.
 
-## Notes
+The first time you open Storage, marè asks for Full Disk Access, which lets it read
+every folder without macOS asking about each one. It explains how to turn it on and
+starts scanning once you have. You can scan without it instead; Desktop, Documents,
+Downloads, iCloud Drive, Messages and Photos are then left out.
 
-Screenshots use a representative dataset rather than a real machine, so that no
-project paths end up in version control.
+marè isn't signed with an Apple Developer ID yet, so macOS ties the permission to each
+build. After an update, turn Full Disk Access on again if Storage asks for it.
+
+Moving an item to the Trash asks once for permission to control Finder. Without it,
+Trash moves fail and marè says why.
+
+## Development
+
+Building from source, running the tests and publishing a release are covered in
+[docs/development.md](docs/development.md).
 
 ## License
 
-MIT
+[MIT](LICENSE)
