@@ -195,6 +195,12 @@
   animation-duration: 180ms;
 }
 
+/* The sidebar highlight moves above the page while it slides, so it blends rather than
+   hiding the link text it passes over. */
+::view-transition-group(nav-highlight) {
+  mix-blend-mode: lighten;
+}
+
 /* The port panel slides in from the table's edge, and back out when closed. */
 @keyframes panel-in {
   from {

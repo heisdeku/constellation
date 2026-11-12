@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Link, Outlet, createRootRoute, useLocation } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
+import { Link, Outlet, createRootRoute } from '@tanstack/react-router'
 import { Toast } from '@base-ui-components/react/toast'
 import { Tooltip } from '@base-ui-components/react/tooltip'
 import { HardDrive, Plug, Search, Settings } from 'lucide-react'
@@ -53,31 +53,29 @@ const NAV = [
 ] as const
 
 function Sidebar({ onSearch }: { onSearch: () => void }) {
-  const { pathname } = useLocation()
-  const nav = useRef<HTMLElement>(null)
-  // One highlight that travels between pages; it only animates once it has a place.
-  const [indicator, setIndicator] = useState<{ y: number; height: number; moved: boolean } | null>(
-    null,
-  )
-
-  useLayoutEffect(() => {
-    const container = nav.current
-    const active = container?.querySelector<HTMLElement>('[data-status="active"]')
-    if (!container || !active) return
-    const top = active.getBoundingClientRect().top - container.getBoundingClientRect().top
-    setIndicator((prev) => ({ y: top, height: active.offsetHeight, moved: prev !== null }))
-  }, [pathname])
-
   const link = (to: string, label: string, Icon: typeof Plug) => (
     <Link
       key={to}
       to={to}
-      className="relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-ink-dim transition-colors hover:text-ink"
+      viewTransition
+      className="relative isolate flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-ink-dim transition-colors hover:text-ink"
       activeProps={{ className: '!text-ink' }}
       activeOptions={{ exact: to === '/', includeSearch: false }}
     >
-      <Icon size={15} className="shrink-0" />
-      {label}
+      {({ isActive }) => (
+        <>
+          {/* One highlight, carried from the old page's link to the new one by name. */}
+          {isActive && (
+            <span
+              aria-hidden
+              className="absolute inset-0 -z-10 rounded-lg bg-surface-2"
+              style={{ viewTransitionName: 'nav-highlight' }}
+            />
+          )}
+          <Icon size={15} className="shrink-0" />
+          {label}
+        </>
+      )}
     </Link>
   )
 
@@ -102,15 +100,7 @@ function Sidebar({ onSearch }: { onSearch: () => void }) {
         </Tip>
       </div>
 
-      <nav ref={nav} className="relative flex min-h-0 flex-1 flex-col">
-        {indicator && (
-          <span
-            aria-hidden
-            className="absolute inset-x-0 top-0 rounded-lg bg-surface-2 motion-safe:data-[moved]:transition-[translate,height] motion-safe:data-[moved]:duration-300 motion-safe:data-[moved]:ease-[var(--ease-continuous)]"
-            data-moved={indicator.moved || undefined}
-            style={{ translate: `0 ${indicator.y}px`, height: indicator.height }}
-          />
-        )}
+      <nav className="flex min-h-0 flex-1 flex-col">
         <div className="flex flex-col gap-0.5">
           {NAV.map((item) => link(item.to, item.label, item.icon))}
         </div>
@@ -125,8 +115,8 @@ function Sidebar({ onSearch }: { onSearch: () => void }) {
 
 function DiskMeter() {
   const { disk } = useStorage()
-  if (!disk) return null
-  const used = disk.totalBytes - disk.freeBytes
+  // Holds its place before the numbers arrive, so Settings above it never moves.
+  const used = disk ? (disk.totalBytes - disk.freeBytes) / disk.totalBytes : 0
 
   return (
     <Link
@@ -136,14 +126,16 @@ function DiskMeter() {
     >
       <div className="flex items-baseline justify-between gap-2 text-[11.5px]">
         <span className="text-ink-dim">Disk</span>
-        <span className="tabular-nums text-ink-faint">{formatBytes(disk.freeBytes)} free</span>
+        <span className="tabular-nums text-ink-faint">
+          {disk ? `${formatBytes(disk.freeBytes)} free` : 'Reading…'}
+        </span>
       </div>
       <div
         role="img"
-        aria-label={`${Math.round((used / disk.totalBytes) * 100)}% of disk used`}
+        aria-label={disk ? `${Math.round(used * 100)}% of disk used` : 'Reading disk usage'}
         className="mt-2 h-1 overflow-hidden rounded-full bg-surface-3"
       >
-        <div className="h-full bg-ink-dim" style={{ width: `${(used / disk.totalBytes) * 100}%` }} />
+        <div className="h-full bg-ink-dim" style={{ width: `${used * 100}%` }} />
       </div>
     </Link>
   )
