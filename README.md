@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="src-tauri/icons/128x128@2x.png" width="104" alt="System Manager">
+<img src="src-tauri/icons/128x128@2x.png" width="104" alt="marè">
 
-# System Manager
+# marè
 
 **See what's using your Mac's ports and disk, and clear space without breaking anything.**
 
@@ -13,16 +13,19 @@
 ![The Storage overview, using the same categories as System Settings](docs/images/storage.png)
 
 System Settings shows how much space System Data takes, but not what's in it, and
-offers no way to remove any of it. System Manager breaks it down into the caches,
+offers no way to remove any of it. marè breaks it down into the caches,
 package stores and leftover files behind it, shows what deleting each one would really
 free, and clears the ones that rebuild themselves.
 
 It also lists every listening port on your Mac with the project folder behind it, so
-"what's on 5173 and can I stop it?" takes one glance instead of three commands.
+"what's on 5173 and can I stop it?" takes one glance instead of three commands. Press
+⌘K from anywhere to jump to a port, a storage category or a page.
+
+![Search, opened with ⌘K](docs/images/search.png)
 
 ## Install
 
-System Manager runs on macOS 10.15 or later, on Apple Silicon and Intel.
+marè runs on macOS 10.15 or later, on Apple Silicon and Intel.
 
 ### With the install script
 
@@ -54,7 +57,7 @@ brew trust --tap heisdeku/tap
 ```
 
 ```bash
-brew install --cask system-manager
+brew install --cask mare
 ```
 
 Homebrew asks you to trust a tap before it installs from one that isn't official.
@@ -62,19 +65,19 @@ Homebrew asks you to trust a tap before it installs from one that isn't official
 ### From the disk image
 
 Download the `.dmg` from the [latest release](https://github.com/heisdeku/constellation/releases/latest)
-and drag System Manager into Applications.
+and drag marè into Applications.
 
-System Manager isn't notarised by Apple yet, so the first time you open a copy
+marè isn't notarised by Apple yet, so the first time you open a copy
 downloaded in a browser, macOS says it can't check the app for malware. To open it:
 
-1. Open System Manager once and close the warning.
+1. Open marè once and close the warning.
 2. Open System Settings › Privacy & Security.
-3. Under Security, click Open Anyway next to System Manager, then confirm.
+3. Under Security, click Open Anyway next to marè, then confirm.
 
 Or remove the download flag in Terminal, which has the same effect:
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/System Manager.app"
+xattr -dr com.apple.quarantine "/Applications/marè.app"
 ```
 
 The install script and Homebrew do this for you, so their installs open without a
@@ -108,7 +111,7 @@ Pause and stop send real signals to the process:
 Pause a dev server you aren't using right now. It stops using CPU and keeps its port
 until you resume it.
 
-System Manager won't signal macOS's own critical processes, processes run by other
+marè won't signal macOS's own critical processes, processes run by other
 users, or itself. It also checks that the PID still belongs to the process you picked,
 so a recycled PID is never hit.
 
@@ -130,7 +133,7 @@ Sizes show what deleting would free, which is often much less than Finder or `du
 reports. APFS lets files share disk blocks, and a shared block only comes back once
 nothing uses it. On one Mac, Chrome had left 69 copies of itself behind after crashes.
 `du` counted them as 118 GB; deleting them all freed 2.3 GB, and that's the number
-System Manager shows.
+marè shows.
 
 Each item is marked:
 
@@ -153,7 +156,7 @@ anything is removed. It also refuses to touch:
 
 ## Privacy and permissions
 
-System Manager makes no network requests. It runs as you, with no admin password and
+marè makes no network requests. It runs as you, with no admin password and
 no background process, and reads your Mac only while it's open.
 
 macOS may ask for a few permissions the first time you use Storage:
@@ -164,7 +167,7 @@ macOS may ask for a few permissions the first time you use Storage:
 - Full Disk Access, which is optional. Without it, Storage can't see Messages, Photos
   or a few system folders, and says how many items it couldn't read. To grant it,
   open System Settings › Privacy & Security › Full Disk Access, click +, and choose
-  System Manager.
+  marè.
 
 ## Development
 

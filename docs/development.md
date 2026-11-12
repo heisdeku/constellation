@@ -1,6 +1,6 @@
 # Development
 
-System Manager is a Tauri v2 app. A Rust backend reads the system, and the UI is
+marè is a Tauri v2 desktop app. A Rust backend reads the system, and the UI is
 React 19 with TanStack Router, Tailwind v4 and Base UI.
 
 ## Requirements
@@ -16,20 +16,20 @@ pnpm install
 ```
 
 ```bash
-pnpm app
+pnpm dev
 ```
 
-`pnpm app` runs `tauri dev`, which starts Vite and the Rust app together. `pnpm dev`
-on its own serves only the web UI, which has no backend, so the app shows an error
-explaining that.
+`pnpm dev` runs `tauri dev`, which builds the Rust app and opens it, serving the UI
+from Vite with hot reload. The UI only runs inside the app; `pnpm ui:dev` starts the
+Vite server on its own, which Tauri does for you.
 
 ## Build an app bundle
 
 ```bash
-pnpm app:build
+pnpm build
 ```
 
-This writes `System Manager.app` and a disk image under `src-tauri/target/release/bundle/`,
+This writes `marè.app` and a disk image under `src-tauri/target/release/bundle/`,
 for the Mac you build on. The release workflow builds one app for both Apple Silicon and
 Intel instead:
 
@@ -61,13 +61,13 @@ The [release workflow](../.github/workflows/release.yml) refuses a tag that does
 match the app version. It runs the tests, builds the universal app, and publishes a
 GitHub release with:
 
-- `System-Manager-<version>-macos-universal.zip`, which the install script and
+- `mare-<version>-macos-universal.zip`, which the install script and
   Homebrew download
-- `System-Manager-<version>-macos-universal.dmg`, for browser downloads
+- `mare-<version>-macos-universal.dmg`, for browser downloads
 - `checksums.txt`, which the install script verifies against
-- `system-manager.rb`, the Homebrew cask filled in for this version
+- `mare.rb`, the Homebrew cask filled in for this version
 
-To update Homebrew, copy `system-manager.rb` from the release into `Casks/` in the
+To update Homebrew, copy `mare.rb` from the release into `Casks/` in the
 [heisdeku/homebrew-tap](https://github.com/heisdeku/homebrew-tap) repository.
 
 The install script and the downloads only work once the repository and its releases
@@ -75,15 +75,15 @@ are public.
 
 ### Test the install script locally
 
-`scripts/package-release.sh` builds the same assets locally, and `SYSTEM_MANAGER_RELEASE_URL`
-points the install script at them. `SYSTEM_MANAGER_DIR` keeps it away from `/Applications`:
+`scripts/package-release.sh` builds the same assets locally, and `MARE_RELEASE_URL`
+points the install script at them. `MARE_DIR` keeps it away from `/Applications`:
 
 ```bash
 scripts/package-release.sh 0.1.0 /tmp/sm-release
 ```
 
 ```bash
-SYSTEM_MANAGER_DIR=/tmp/sm-apps SYSTEM_MANAGER_RELEASE_URL=file:///tmp/sm-release bash scripts/install.sh --version 0.1.0 --no-open
+MARE_DIR=/tmp/sm-apps MARE_RELEASE_URL=file:///tmp/sm-release bash scripts/install.sh --version 0.1.0 --no-open
 ```
 
 ## Tests
@@ -141,8 +141,9 @@ checks again before acting, and measuring and cleaning walk the same list of pat
 ```
 src/
   routes/          TanStack Router routes: __root, index (Ports), storage, settings
-  components/      Port table, detail panel, actions, toasts, Base UI wrappers
-  lib/             Tauri bindings, filtering, formatting, app and storage state, motion
+  components/      Port table, detail panel, ⌘K search, logo, actions, toasts, Base UI wrappers
+  lib/             Tauri bindings, filtering, formatting, app and storage state, motion,
+                   storage categories
 src-tauri/src/
   lib.rs           Tauri commands
   ports.rs         lsof parsing, grouping, Docker details
@@ -155,6 +156,21 @@ scripts/
   package-release.sh  Collects a build into release assets
 packaging/homebrew/   Cask template, filled in by the release workflow
 docs/icon.svg      Icon artwork, with instructions for regenerating the icons
+```
+
+## App icon
+
+The icon's source is `docs/icon.svg`. Render it with a rasteriser that keeps the
+transparent margin (`qlmanage` doesn't; it adds a white background):
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --force-device-scale-factor=1 --default-background-color=00000000 --window-size=1024,1024 --screenshot=icon.png "file://$PWD/docs/icon.svg"
+```
+
+Then regenerate every size:
+
+```bash
+pnpm tauri icon icon.png
 ```
 
 ## Screenshots
