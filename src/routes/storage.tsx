@@ -191,6 +191,7 @@ function StoragePage() {
   }
 
   const totals = categoryTotals(disk, targets, measurements)
+  const notes = categoryNotes(targets, measurements, scanning)
 
   return (
     <div className="flex h-full flex-col">
@@ -215,7 +216,7 @@ function StoragePage() {
             <CategoryView
               category={category}
               path={path}
-              total={totals[category]}
+              total={notes[category] ?? formatBytes(totals[category])}
               rowProps={{
                 measurements,
                 selected,
@@ -229,7 +230,7 @@ function StoragePage() {
             <Overview
               disk={disk}
               totals={totals}
-              notes={categoryNotes(targets, measurements, scanning)}
+              notes={notes}
               selectedBytes={chosenBytes}
               scanning={scanning}
               onScan={() => void scan()}
@@ -352,7 +353,7 @@ function Overview({
 
   return (
     <>
-      <section className="mb-6">
+      <section className="sticky top-0 z-10 -mt-5 bg-surface pt-5 pb-6">
         <div className="mb-3 flex items-end justify-between gap-4">
           <div>
             <h1 className="text-[20px] font-semibold tracking-tight text-ink">Storage</h1>
@@ -463,7 +464,8 @@ function CategoryView({
 }: {
   category: CategoryId
   path: string | undefined
-  total: number
+  /** Already formatted, since it can read Calculating… while the scan runs. */
+  total: string
   rowProps: RowProps
 }) {
   const { targets, browsed } = useStorage()
@@ -489,7 +491,7 @@ function CategoryView({
 
   return (
     <>
-      <div className="mb-5">
+      <div className="sticky top-0 z-10 -mt-5 bg-surface pt-5 pb-5">
         <Link
           to="/storage"
           search={backTo()}
@@ -512,7 +514,7 @@ function CategoryView({
               className="shrink-0 text-[13px] font-medium tabular-nums text-ink-dim"
               style={{ viewTransitionName: categorySize(category) }}
             >
-              {formatBytes(total)}
+              {total}
             </span>
           )}
         </div>

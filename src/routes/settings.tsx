@@ -29,7 +29,7 @@ function SettingsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-[600px] px-6 pb-8 pt-5">
-        <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="sticky top-0 z-10 -mt-5 flex items-start justify-between gap-4 bg-surface pb-6 pt-5">
           <div>
             <h1 className="text-[20px] font-semibold tracking-tight text-ink">Settings</h1>
             <p className="mt-0.5 text-[12px] text-ink-faint">
