@@ -189,31 +189,6 @@
   mix-blend-mode: lighten;
 }
 
-::view-transition-group(ports-main),
-::view-transition-new(ports-main) {
-  animation: none;
-}
-::view-transition-old(ports-main) {
-  display: none;
-}
-
-@keyframes panel-in {
-  from {
-    transform: translateX(100%);
-  }
-}
-@keyframes panel-out {
-  to {
-    transform: translateX(100%);
-  }
-}
-::view-transition-new(port-panel):only-child {
-  animation: panel-in 280ms var(--ease-continuous);
-}
-::view-transition-old(port-panel):only-child {
-  animation: panel-out 280ms var(--ease-continuous);
-}
-
 .grow-from {
   transition:
     opacity 250ms var(--ease-continuous),
@@ -242,9 +217,7 @@
     translate: -50% -50%;
     scale: 1;
   }
-  ::view-transition-group(*),
-  ::view-transition-new(port-panel):only-child,
-  ::view-transition-old(port-panel):only-child {
+  ::view-transition-group(*) {
     animation-duration: 0s;
   }
   ::view-transition-old(root),

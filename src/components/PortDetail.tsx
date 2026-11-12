@@ -20,15 +20,31 @@ import {
   wellKnownName,
 } from '~/lib/format'
 import { useApp } from '~/lib/store'
+import { reducedMotion } from '~/lib/motion'
 import { useActions } from './actions'
 import { Chip, StateDot, Tip, cx } from './ui'
 
+const SLIDE_IN: KeyframeAnimationOptions = { duration: 280, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }
+const SLIDE_OUT: KeyframeAnimationOptions = {
+  duration: 200,
+  easing: 'cubic-bezier(0.4, 0, 1, 1)',
+  fill: 'forwards',
+}
+
+/**
+ * Slides in from the right edge when opened. When `closing` is set it lifts out of the
+ * layout, so the table widens underneath at once, slides away, then calls `onClosed`.
+ */
 export function PortDetail({
   entry,
+  closing,
   onClose,
+  onClosed,
 }: {
   entry: PortEntry
+  closing: boolean
   onClose: () => void
+  onClosed: () => void
 }) {
   const { home } = useApp()
   const actions = useActions()
@@ -37,21 +53,38 @@ export function PortDetail({
   const service = wellKnownName(entry.port)
   const args = commandArgs(p.command, p.exe)
   const heading = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLElement>(null)
 
-  useEffect(() => heading.current?.focus({ preventScroll: true }), [])
+  useEffect(() => {
+    heading.current?.focus({ preventScroll: true })
+    if (reducedMotion()) return
+    panel.current?.animate([{ transform: 'translateX(100%)' }, { transform: 'none' }], SLIDE_IN)
+  }, [])
+
+  useEffect(() => {
+    if (!closing) return
+    const el = panel.current
+    if (!el || reducedMotion()) {
+      onClosed()
+      return
+    }
+    const slide = el.animate([{ transform: 'none' }, { transform: 'translateX(100%)' }], SLIDE_OUT)
+    slide.finished.then(onClosed, () => {})
+    return () => slide.cancel()
+  }, [closing])
 
   return (
     <aside
+      ref={panel}
       aria-label={`Port ${entry.port}`}
-      className="flex h-full w-[340px] shrink-0 flex-col border-l border-line bg-surface"
-      style={{ viewTransitionName: 'port-panel' }}
+      className={cx(
+        'flex h-full w-[340px] shrink-0 flex-col border-l border-line bg-surface',
+        closing && 'pointer-events-none absolute inset-y-0 right-0 z-10',
+      )}
     >
       <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-4">
         <div ref={heading} tabIndex={-1} className="flex items-baseline gap-2 outline-none">
-          <span
-            className="font-mono text-[15px] font-semibold tabular-nums text-ink"
-            style={{ viewTransitionName: `port-${entry.id}` }}
-          >
+          <span className="font-mono text-[15px] font-semibold tabular-nums text-ink">
             {entry.port}
           </span>
           <span className="text-[10.5px] uppercase tracking-wider text-ink-faint">
@@ -72,10 +105,7 @@ export function PortDetail({
         <section className="border-b border-line px-4 py-3.5">
           <div className="flex items-center gap-2">
             <StateDot state={p.state} paused={p.paused} />
-            <span
-              className="truncate text-[13.5px] font-semibold text-ink"
-              style={{ viewTransitionName: `proc-${entry.id}` }}
-            >
+            <span className="truncate text-[13.5px] font-semibold text-ink">
               {entry.docker?.name ?? p.name}
             </span>
           </div>

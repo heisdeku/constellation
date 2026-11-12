@@ -30,7 +30,6 @@ const WIDE_ONLY = 'hidden @3xl:block'
 export function PortsTable({
   entries,
   selectedId,
-  movingId,
   onSelect,
   sort,
   dir,
@@ -38,7 +37,6 @@ export function PortsTable({
 }: {
   entries: PortEntry[]
   selectedId: string | null
-  movingId: string | null
   onSelect: (id: string | null) => void
   sort: SortKey
   dir: SortDir
@@ -69,7 +67,6 @@ export function PortsTable({
             key={entry.id}
             entry={entry}
             selected={entry.id === selectedId}
-            moving={entry.id === movingId}
             leaving={leaving}
             onSelect={onSelect}
           />
@@ -115,13 +112,11 @@ function SortHeader({
 function Row({
   entry,
   selected,
-  moving,
   leaving,
   onSelect,
 }: {
   entry: PortEntry
   selected: boolean
-  moving: boolean
   leaving: boolean
   onSelect: (id: string | null) => void
 }) {
@@ -132,7 +127,6 @@ function Row({
   const folder = folderFor(entry)
   const service = wellKnownName(entry.port)
   const label = entry.docker?.name ?? p.name
-  const shared = moving && !selected && !leaving
 
   return (
     <div
@@ -158,7 +152,6 @@ function Row({
       <div className="flex flex-col">
         <span
           className="w-fit font-mono text-[14px] font-semibold tabular-nums text-ink"
-          style={{ viewTransitionName: shared ? `port-${entry.id}` : undefined }}
         >
           {entry.port}
         </span>
@@ -172,7 +165,6 @@ function Row({
           <StateDot state={p.state} paused={p.paused} />
           <span
             className="truncate font-medium text-ink"
-            style={{ viewTransitionName: shared ? `proc-${entry.id}` : undefined }}
           >
             {label}
           </span>

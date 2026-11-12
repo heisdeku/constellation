@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { AlertTriangle, Pause, Play, Plug, RefreshCw, Search, SearchX, X } from 'lucide-react'
 import { ActionsProvider } from '~/components/actions'
@@ -40,21 +39,24 @@ function PortsPage() {
   const { tracking, setTracking, scanning, scannedAt, refresh } = useApp()
   const searchRef = useRef<HTMLInputElement>(null)
 
-  const setSearch = (patch: Partial<PortsSearch>, viewTransition = false) =>
-    navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, viewTransition })
+  const setSearch = (patch: Partial<PortsSearch>) =>
+    navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
 
-  const [movingRow, setMovingRow] = useState<string | null>(null)
-  const markMoving = (id: string | null) => flushSync(() => setMovingRow(id))
+  const [closing, setClosing] = useState(false)
 
   const select = (sel: string | null) => {
-    markMoving(sel ?? search.sel ?? null)
-    void setSearch({ sel: sel ?? undefined }, true)
+    if (sel === null) {
+      setClosing(true)
+      return
+    }
+    setClosing(false)
+    void setSearch({ sel })
   }
 
-  const closeDetail = async () => {
+  const finishClosing = async () => {
     const id = search.sel
-    markMoving(id ?? null)
-    await setSearch({ sel: undefined }, true)
+    setClosing(false)
+    await setSearch({ sel: undefined })
     if (id) document.querySelector<HTMLElement>(`[data-motion-key="${CSS.escape(id)}"]`)?.focus()
   }
 
@@ -97,11 +99,8 @@ function PortsPage() {
 
   return (
     <ActionsProvider>
-      <div className="flex h-full">
-        <div
-          className="flex min-w-0 flex-1 flex-col"
-          style={{ viewTransitionName: 'ports-main' }}
-        >
+      <div className="relative flex h-full">
+        <div className="flex min-w-0 flex-1 flex-col">
           <PageHeader
             title="Ports"
             subtitle={
@@ -234,8 +233,7 @@ function PortsPage() {
             ) : (
               <PortsTable
                 entries={visible}
-                selectedId={search.sel ?? null}
-                movingId={movingRow}
+                selectedId={closing ? null : (search.sel ?? null)}
                 onSelect={select}
                 sort={search.sort}
                 dir={search.dir}
@@ -254,7 +252,12 @@ function PortsPage() {
         </div>
 
         {selected && (
-          <PortDetail entry={selected} onClose={() => void closeDetail()} />
+          <PortDetail
+            entry={selected}
+            closing={closing}
+            onClose={() => setClosing(true)}
+            onClosed={() => void finishClosing()}
+          />
         )}
       </div>
     </ActionsProvider>
