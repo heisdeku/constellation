@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, Outlet, createRootRoute, useNavigate } from '@tanstack/react-router'
+import { getIdentifier } from '@tauri-apps/api/app'
 import { Toast } from '@base-ui-components/react/toast'
 import { Tooltip } from '@base-ui-components/react/tooltip'
 import { HardDrive, Plug, Search, Settings } from 'lucide-react'
 import { CommandPalette } from '~/components/CommandPalette'
 import { Logo } from '~/components/Logo'
 import { ToastViewport } from '~/components/Toaster'
-import { Tip } from '~/components/ui'
+import { Chip, Tip } from '~/components/ui'
 import { DEFAULT_SEARCH } from '~/lib/filter'
 import { formatBytes } from '~/lib/format'
 import { useMenu } from '~/lib/menu'
@@ -49,7 +50,12 @@ const NAV = [
   { to: '/storage', label: 'Storage', icon: HardDrive },
 ] as const
 
+/** The sidebar, which marks the dev build so it can't be mistaken for the installed app. */
 function Sidebar({ onSearch }: { onSearch: () => void }) {
+  const [dev, setDev] = useState(false)
+  useEffect(() => {
+    void getIdentifier().then((id) => setDev(id.endsWith('-dev')))
+  }, [])
   const link = (to: string, label: string, Icon: typeof Plug) => (
     <Link
       key={to}
@@ -82,6 +88,7 @@ function Sidebar({ onSearch }: { onSearch: () => void }) {
       <div className="mb-4 flex items-center gap-2 px-1.5">
         <Logo />
         <span className="text-[14px] font-semibold tracking-tight text-ink">marè</span>
+        {dev && <Chip tone="violet">Dev</Chip>}
         <Tip content="Search  ⌘K" side="bottom">
           <button
             type="button"

@@ -124,9 +124,11 @@ async fn clean_target(id: String) -> Result<CleanResult, String> {
 
 const REPO: &str = "https://github.com/heisdeku/mare";
 
-/// The macOS menu bar. Standard items are the system's own; marè's commands carry
-/// ids that are forwarded to the window as `menu` events.
+/// The macOS menu bar, titled with the product name so a dev build reads "marè (Dev)".
+/// Standard items are the system's own; marè's commands carry ids that are forwarded
+/// to the window as `menu` events.
 fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let name = app.package_info().name.clone();
     let item = |id: &str, label: &str, accel: Option<&str>| {
         MenuItem::with_id(app, id, label, true, accel)
     };
@@ -135,8 +137,8 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ..Default::default()
     };
 
-    let app_menu = SubmenuBuilder::new(app, "marè")
-        .item(&PredefinedMenuItem::about(app, Some("About marè"), Some(about))?)
+    let app_menu = SubmenuBuilder::new(app, &name)
+        .item(&PredefinedMenuItem::about(app, Some(&format!("About {name}")), Some(about))?)
         .separator()
         .item(&item("settings", "Settings…", Some("CmdOrCtrl+,"))?)
         .separator()
@@ -175,7 +177,7 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .close_window()
         .build()?;
     let help = SubmenuBuilder::new(app, "Help")
-        .item(&item("help", "marè Help", None)?)
+        .item(&item("help", &format!("{name} Help"), None)?)
         .separator()
         .item(&item("issue", "Report an Issue…", None)?)
         .build()?;
